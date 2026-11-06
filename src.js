@@ -24,7 +24,74 @@ const particles = new Float32Array(480 * 3);
 for (let i = 0; i < particles.length; i++) particles[i] = (Math.random() - .5) * 26;
 const dust = new T.BufferGeometry();
 dust.setAttribute('position', new T.BufferAttribute(particles, 3));
-scene.add(new T.Points(dust, new T.PointsMaterial({ color: '#ad8cc3', size: .045, transparent: true, opacity: .5 })));
+const stars = new T.Points(dust, new T.PointsMaterial({color:'#ad8cc3',size:.045,transparent:true,opacity:.5}));
+scene.add(stars);
+const backdrop = document.createElement('canvas');
+backdrop.width = backdrop.height = 256;
+const backdropMap = new T.CanvasTexture(backdrop);
+backdropMap.colorSpace = T.SRGBColorSpace;
+function updateBackground() {
+  const color = byId('background').value;
+  const finish = byId('finish').value;
+  stars.visible = finish === 'space';
+  if (finish === 'flat') {
+    scene.background = new T.Color(color);
+    return;
+  }
+  const ctx = backdrop.getContext('2d');
+  ctx.fillStyle = color;
+  ctx.fillRect(0,0,256,256);
+  const light = ctx.createRadialGradient(128,108,5,128,108,182);
+  light.addColorStop(0, finish === 'studio' ? '#ffffff26' : '#7469db44');
+  light.addColorStop(.52,'#ffffff00');
+  light.addColorStop(1,'#00000088');
+  ctx.fillStyle = light;
+  ctx.fillRect(0,0,256,256);
+  backdropMap.needsUpdate = true;
+  scene.background = backdropMap;
+}
+byId('background').oninput = updateBackground;
+byId('finish').onchange = updateBackground;
+updateBackground();
+
+const captionCanvas = document.createElement('canvas');
+captionCanvas.width = 1024;
+captionCanvas.height = 208;
+const captionMap = new T.CanvasTexture(captionCanvas);
+captionMap.colorSpace = T.SRGBColorSpace;
+const caption = new T.Sprite(new T.SpriteMaterial({map:captionMap,transparent:true,depthTest:false,depthWrite:false}));
+caption.renderOrder = 20;
+scene.add(caption);
+let captionKey;
+function updateCaption(card, alpha) {
+  caption.visible = Boolean(card && alpha > .01);
+  if (!caption.visible) return;
+  const key = JSON.stringify([card.title || card.name,card.detail]);
+  if (key !== captionKey) {
+    const ctx = captionCanvas.getContext('2d');
+    ctx.clearRect(0,0,1024,208);
+    ctx.fillStyle = '#11111bed';
+    ctx.beginPath();
+    ctx.roundRect(3,3,1018,202,26);
+    ctx.fill();
+    ctx.strokeStyle = '#ffffff35';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    ctx.fillStyle = '#fff7ed';
+    ctx.font = '600 58px Georgia';
+    ctx.fillText(card.title || card.name,42,89,940);
+    ctx.fillStyle = '#e0d7e6';
+    ctx.font = '34px system-ui';
+    ctx.fillText(card.detail,42,154,940);
+    captionMap.needsUpdate = true;
+    captionKey = key;
+  }
+  const width = Math.min(4.6,camera.aspect * 4.9);
+  const height = width * 208 / 1024;
+  caption.scale.set(width,height,1);
+  caption.position.set(0,-2.69 + height / 2,0);
+  caption.material.opacity = alpha;
+}
 const cards = [];
 const view = { cursor: 0, focus: 0, progress: 0 };
 let selected = 0;
@@ -33,8 +100,11 @@ let animation;
 let spinning = false;
 let lastFrame;
 let layout = 'helix';
-let spacing = 1;
-let layerEffects = false;
+let spacing = 1.35;
+let layerEffects = true;
+let recordingTour = false;
+const tour = {position:0};
+const smooth = (value,min,max) => T.MathUtils.smoothstep(value,min,max);
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const ray = new T.Raycaster();
 
@@ -62,22 +132,30 @@ function setSpinning(value) {
   byId('orbit').textContent = value ? 'Pausar recorrido' : 'Reproducir recorrido';
   byId('orbit').setAttribute('aria-pressed', String(value));
 }
-renderer.setAnimationLoop(time => {
+function drawFrame(time) {
   const delta = Math.min(.05, (time - (lastFrame ?? time)) / 1000);
   lastFrame = time;
   if (spinning && !busy && cards.length > 1) {
-    view.cursor = wrap(view.cursor + delta / duration(), cards.length);
+    tour.position = wrap(tour.position + delta / duration(), cards.length);
   }
+  const touring = (spinning && !busy || recordingTour) && cards.length > 1;
+  const turn = Math.floor(tour.position);
+  const beat = tour.position - turn;
+  const spotlight = touring && layerEffects;
+  const featured = spotlight ? wrap(turn,cards.length) : selected;
+  const emphasis = spotlight ? smooth(beat,.12,.32) * (1 - smooth(beat,.73,.94)) : touring ? 0 : view.focus;
+  const cursor = touring ? turn + (spotlight ? smooth(beat,.72,1) : beat) : view.cursor;
+  const progress = spotlight ? smooth(beat,.2,.93) : view.progress;
   cards.forEach(({ mesh, aspect, effect, strength }, i) => {
     const half = cards.length / 2;
-    const offset = wrap(i - view.cursor + half, cards.length) - half;
+    const offset = wrap(i - cursor + half, cards.length) - half;
     const angle = offset * Math.min(1.6, 6.28 / Math.min(cards.length, 7));
     const edge = cards.length === 1 ? 1 : T.MathUtils.smoothstep(half - Math.abs(offset), 0, .48);
-    const focus = i === selected ? view.focus : 0;
-    const motion = effects[effect][1](view.progress, strength);
+    const focus = i === featured ? emphasis : 0;
+    const motion = effects[effect][1](progress, strength);
     const span = camera.aspect * 5.82;
     const step = offset * spacing;
-    const bubble = layout === 'bubbles' && focus < .5;
+    const bubble = layout === 'bubbles';
     mesh.geometry = bubble ? bubbleGeometry : geometry;
     let x = step * Math.min(1.65, span * .4) + Math.sin(angle) * .38;
     let y = step * 1.02 - Math.sin(angle) * .18;
@@ -91,7 +169,7 @@ renderer.setAnimationLoop(time => {
       y = z = rx = ry = rz = 0;
       galleryWidth = Math.min(span * .94, 5.35 * aspect);
     } else if (layout === 'bubbles') {
-      x = step * span * .3;
+      x = step * span * .34;
       y = Math.sin(offset * 1.55 + i * .8) * .94;
       z = Math.cos(offset * 1.35) * .64;
       rx = ry = rz = 0;
@@ -104,27 +182,27 @@ renderer.setAnimationLoop(time => {
       ry = Math.sin(step) * .42;
       rz = Math.cos(step) * .13;
     }
-    const phase = 1 - Math.min(1, Math.abs(offset));
-    const orbitMotion = layerEffects ? effects[effect][1](phase, strength * .55) : {};
-    const focusWidth = Math.min(4.65 * camera.aspect, 4.5 * aspect) * (motion.scale ?? 1);
-    const width = mix(galleryWidth * (orbitMotion.scale ?? 1), focusWidth, focus);
+    const focusWidth = Math.min(camera.aspect * 4.1, bubble ? 3.25 : 3.62 * aspect) * (motion.scale ?? 1);
+    const width = mix(galleryWidth, focusWidth, focus);
     mesh.scale.set(width, bubble ? width : width / aspect, 1);
     mesh.position.set(
-      mix(x + (orbitMotion.x ?? 0), motion.x ?? 0, focus),
-      mix(y + (orbitMotion.y ?? 0), motion.y ?? 0, focus),
-      mix(z + (orbitMotion.z ?? 0), (motion.z ?? 0) + .6, focus)
+      mix(x, motion.x ?? 0, focus),
+      mix(y, .45 + (motion.y ?? 0), focus),
+      mix(z, (motion.z ?? 0) + .42, focus)
     );
     mesh.rotation.set(
-      mix(rx + (orbitMotion.rx ?? 0), motion.rx ?? 0, focus),
-      mix(ry + (orbitMotion.ry ?? 0), motion.ry ?? 0, focus),
-      mix(rz + (orbitMotion.rz ?? 0), motion.rz ?? 0, focus)
+      mix(rx, motion.rx ?? 0, focus),
+      mix(ry, motion.ry ?? 0, focus),
+      mix(rz, motion.rz ?? 0, focus)
     );
-    const opacity = (layout === 'slides' && Math.abs(offset) < .95 ? 1 : edge) * (orbitMotion.opacity ?? 1);
-    mesh.material.opacity = i === selected ? mix(opacity, motion.opacity ?? 1, focus) : opacity * (1 - view.focus * .8);
+    const opacity = layout === 'slides' && Math.abs(offset) < .95 ? 1 : edge;
+    mesh.material.opacity = i === featured ? mix(opacity, motion.opacity ?? 1, focus) : opacity * (1 - emphasis * .58);
     mesh.visible = mesh.material.opacity > .005;
   });
+  updateCaption(cards[featured], emphasis);
   renderer.render(scene, camera);
-});
+}
+renderer.setAnimationLoop(drawFrame);
 
 effects.forEach(([label], i) => byId('effect').add(new Option(label, i)));
 function refresh() {
@@ -132,6 +210,8 @@ function refresh() {
   byId('empty').hidden = Boolean(card);
   byId('selected').textContent = card ? (selected + 1) + ' / ' + cards.length + ' · ' + card.name : 'Ninguna imagen seleccionada';
   if (card) {
+    byId('cardTitle').value = card.title;
+    byId('cardDetail').value = card.detail;
     byId('effect').value = card.effect;
     byId('strength').value = card.strength;
   }
@@ -147,13 +227,14 @@ function refresh() {
     button.onclick = () => { if (!busy) select(i); };
     return button;
   }));
-  for (const id of ['effect','strength','prev','next','play','orbit','remove','random','applyAll','export','webp']) {
+  for (const id of ['cardTitle','cardDetail','effect','strength','prev','next','play','orbit','remove','random','applyAll','export','webp']) {
     byId(id).disabled = !card || busy;
   }
 }
 function select(index, focus = true) {
   if (!cards.length) return;
   animation?.kill();
+  if (spinning) view.cursor = tour.position;
   setSpinning(false);
   selected = wrap(index, cards.length);
   const half = cards.length / 2;
@@ -202,11 +283,11 @@ async function addImage(source, name) {
   const mesh = new T.Mesh(geometry, new T.MeshBasicMaterial({map:texture, side:T.DoubleSide, transparent:true}));
   scene.add(mesh);
   const available = effects.map((_, i) => i).filter(i => !cards.some(card => card.effect === i));
-  cards.push({name, url, mesh, aspect:image.width/image.height, effect:available[Math.floor(Math.random()*available.length)] ?? 0, strength:.75});
+  cards.push({name, title:name.replace(/\.[^.]+$/, "").slice(0,52), detail:"", url, mesh, aspect:image.width/image.height, effect:available[Math.floor(Math.random()*available.length)] ?? 0, strength:.75});
 }
 function lock(value) {
   busy = value;
-  for (const id of ['files','demo','demoSet','ratio','duration','scope','layout','spacing','layerEffects']) byId(id).disabled = value;
+  for (const id of ['files','demo','demoSet','ratio','duration','scope','layout','spacing','layerEffects','background','finish']) byId(id).disabled = value;
   refresh();
 }
 async function importImages(files) {
@@ -271,13 +352,16 @@ byId('next').onclick = () => select(selected + 1, false);
 function startOrbit() {
   animation?.kill();
   Object.assign(view, {focus:0, progress:0});
+  tour.position = wrap(Math.round(view.cursor), cards.length || 1);
   setSpinning(true);
 }
 byId('orbit').onclick = () => {
-  if (spinning) setSpinning(false);
+  if (spinning) { view.cursor = tour.position; setSpinning(false); }
   else startOrbit();
 };
 byId('effect').onchange = e => { cards[selected].effect = Number(e.target.value); select(selected); };
+byId('cardTitle').oninput = e => { cards[selected].title = e.target.value; };
+byId('cardDetail').oninput = e => { cards[selected].detail = e.target.value; };
 byId('strength').oninput = e => { cards[selected].strength = Number(e.target.value); };
 byId('random').onclick = () => {
   randomize();
@@ -363,7 +447,9 @@ byId('export').onclick = async () => {
   try {
     resize(true);
     Object.assign(view, {cursor:indices[0],focus:0,progress:0});
-    renderer.render(scene,camera);
+    tour.position = 0;
+    recordingTour = helix;
+    drawFrame(performance.now());
     stream = canvas.captureStream(30);
     recorder = new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:8_000_000});
     const chunks = [];
@@ -377,7 +463,9 @@ byId('export').onclick = async () => {
       onUpdate:() => status('Grabando WebM · ' + Math.round(animation.progress()*100) + '%'),
       onComplete:() => { if (recorder.state !== 'inactive') recorder.stop(); }
     });
-    if (helix) animation.to(view, {cursor:indices.length, duration:seconds * indices.length, ease:'none'});
+    if (helix) {
+      animation.to(tour, {position:indices.length,duration:seconds * indices.length,ease:'none'});
+    }
     else indices.forEach(index => clip(animation,index,seconds));
     const blob = await result;
     if (!blob.size) throw new Error('El video salió vacío.');
@@ -388,6 +476,7 @@ byId('export').onclick = async () => {
   } catch (error) {
     status(error.message);
   } finally {
+    recordingTour = false;
     animation?.kill();
     if (recorder && recorder.state !== 'inactive') recorder.stop();
     stream?.getTracks().forEach(track => track.stop());
