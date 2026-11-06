@@ -38,6 +38,8 @@ Convierte tus imágenes en recorridos animados en 3D y descarga el resultado en 
 
 ## Exportación
 
+En **Burbujas** con encuadre **9:16**, elige **Posición al desplegar** para encuadrar la tarjeta en el tercio superior, central o inferior. Si la ficha de texto coincide con ese extremo, aparece en el extremo opuesto.
+
 | Ajuste | Opciones |
 | --- | --- |
 | Encuadre | **1:1** 1024 × 1024, **9:16** 1080 × 1920 o **16:9** 1920 × 1080 |

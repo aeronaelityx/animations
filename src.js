@@ -77,7 +77,7 @@ scene.add(caption);
 let captionKey;
 let captionPixels = 128;
 const textControls = ['font','align','titleSize','detailSize','titleColor','detailColor','captionColor','captionPosition'];
-function updateCaption(card, alpha) {
+function updateCaption(card, alpha, placement) {
   caption.visible = Boolean(byId('showCaption').checked && card && alpha > .01);
   if (!caption.visible) return 0;
 
@@ -103,7 +103,7 @@ function updateCaption(card, alpha) {
   const height = width * captionPixels / captionCanvas.width;
   const fit = Math.tan(T.MathUtils.degToRad(camera.fov / 2)) / Math.tan(T.MathUtils.degToRad(20));
   caption.scale.set(width * fit, height * fit, 1);
-  caption.position.set(0, (2.69 - height / 2) * (position === 'top' ? 1 : -1) * fit, -8);
+  caption.position.set(0, (2.69 - height / 2) * ((placement ?? position) === 'top' ? 1 : -1) * fit, -8);
   caption.position.applyQuaternion(camera.quaternion).add(camera.position);
   caption.material.opacity = alpha;
   return height;
@@ -140,7 +140,17 @@ function resize(full = false) {
   renderer.domElement.style.height = Math.round(height * scale) + 'px';
 }
 new ResizeObserver(() => { if (!busy) resize(); }).observe(stage);
-byId('ratio').onchange = () => resize();
+const bubbleTarget = new T.Vector3();
+function usesVerticalThirds() {
+  return layout === 'bubbles' && byId('ratio').value === '1080,1920';
+}
+function updateThirdControl() {
+  byId('bubbleThirdControl').hidden = !usesVerticalThirds();
+}
+byId('ratio').onchange = () => {
+  resize();
+  updateThirdControl();
+};
 
 const mix = T.MathUtils.lerp;
 function wrap(value, length) {
@@ -206,7 +216,12 @@ function drawFrame(time) {
   }
 
   pool.hide();
-  const captionHeight = updateCaption(active, layout === 'bubbles' ? smooth(emphasis, .57, .93) : emphasis);
+  const thirds = usesVerticalThirds();
+  const third = byId('bubbleThird').value;
+  const captionPosition = byId('captionPosition').value;
+  const captionPlacement = thirds && third === captionPosition
+    ? (third === 'top' ? 'bottom' : 'top') : captionPosition;
+  const captionHeight = updateCaption(active, layout === 'bubbles' ? smooth(emphasis, .57, .93) : emphasis, captionPlacement);
   const extraCaption = Math.max(0, captionHeight - .91);
   const captionY = captionSign * (.44 + extraCaption * .5);
   cards.forEach((card, i) => {
@@ -284,13 +299,28 @@ function drawFrame(time) {
       ry = Math.sin(step) * .42;
       rz = Math.cos(step) * .13;
     }
-    const focusWidth = Math.min(camera.aspect * 4.25, (3.62 - extraCaption) * renderAspect) * (motion.scale ?? 1);
+    let focusWidth = Math.min(camera.aspect * 4.25, (3.62 - extraCaption) * renderAspect) * (motion.scale ?? 1);
+    let focusX = motion.x ?? 0;
+    let focusY = captionY + (motion.y ?? 0);
+    let focusZ = (motion.z ?? 0) + .42;
+    if (thirds && focus > 0) {
+      const depth = Math.max(1, camera.position.length() - T.MathUtils.clamp(focusZ, -.8, 1.3));
+      const halfHeight = depth * Math.tan(T.MathUtils.degToRad(camera.fov / 2));
+      const center = third === 'top' ? 2 / 3 : third === 'bottom' ? -2 / 3 : 0;
+      focusWidth = Math.min(focusWidth, halfHeight * .58 * Math.min(renderAspect, 1));
+      bubbleTarget.set(
+        T.MathUtils.clamp(focusX, -halfHeight * .08, halfHeight * .08),
+        halfHeight * center + T.MathUtils.clamp(motion.y ?? 0, -halfHeight * .025, halfHeight * .025),
+        -depth
+      ).applyQuaternion(camera.quaternion).add(camera.position);
+      ({ x: focusX, y: focusY, z: focusZ } = bubbleTarget);
+    }
     const width = mix(galleryWidth, focusWidth, focus);
     mesh.scale.set(width, width / renderAspect, 1);
     mesh.position.set(
-      mix(x, motion.x ?? 0, focus),
-      mix(y, captionY + (motion.y ?? 0), focus),
-      mix(z, (motion.z ?? 0) + .42, focus)
+      mix(x, focusX, focus),
+      mix(y, focusY, focus),
+      mix(z, focusZ, focus)
     );
     mesh.rotation.set(
       mix(rx, motion.rx ?? 0, focus),
@@ -511,7 +541,7 @@ async function addImage(source, name) {
 }
 function lock(value) {
   busy = value;
-  for (const id of ['files','demo','demoSet','ratio','duration','scope','layout','spacing','layerEffects','background','finish','fps','showCaption',...textControls]) byId(id).disabled = value;
+  for (const id of ['files','demo','demoSet','ratio','duration','scope','layout','spacing','layerEffects','background','finish','fps','showCaption','bubbleThird',...textControls]) byId(id).disabled = value;
   refresh();
 }
 async function importImages(files) {
@@ -677,6 +707,7 @@ byId('applyAll').onclick = () => {
 byId('layout').onchange = e => {
   if (spinning) view.cursor = tourCursor(tour.position);
   layout = e.target.value;
+  updateThirdControl();
   layerEffects = spotlightPreference.get(layout) ?? !['radiant', 'collage', 'pool'].includes(layout);
   byId('layerEffects').checked = layerEffects;
   byId('motionNote').textContent = {
