@@ -19,6 +19,7 @@ try {
 }
 stage.prepend(renderer.domElement);
 const geometry = new T.PlaneGeometry(1, 1);
+const bubbleGeometry = new T.CircleGeometry(.5, 64);
 const particles = new Float32Array(480 * 3);
 for (let i = 0; i < particles.length; i++) particles[i] = (Math.random() - .5) * 26;
 const dust = new T.BufferGeometry();
@@ -31,6 +32,9 @@ let busy = false;
 let animation;
 let spinning = false;
 let lastFrame;
+let layout = 'helix';
+let spacing = 1;
+let layerEffects = false;
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const ray = new T.Raycaster();
 
@@ -55,7 +59,7 @@ function wrap(value, length) {
 }
 function setSpinning(value) {
   spinning = value;
-  byId('orbit').textContent = value ? 'Pausar hélice' : 'Girar hélice';
+  byId('orbit').textContent = value ? 'Pausar recorrido' : 'Reproducir recorrido';
   byId('orbit').setAttribute('aria-pressed', String(value));
 }
 renderer.setAnimationLoop(time => {
@@ -71,21 +75,52 @@ renderer.setAnimationLoop(time => {
     const edge = cards.length === 1 ? 1 : T.MathUtils.smoothstep(half - Math.abs(offset), 0, .48);
     const focus = i === selected ? view.focus : 0;
     const motion = effects[effect][1](view.progress, strength);
-    const galleryWidth = Math.min(3.25, camera.aspect * 4.05);
+    const span = camera.aspect * 5.82;
+    const step = offset * spacing;
+    const bubble = layout === 'bubbles' && focus < .5;
+    mesh.geometry = bubble ? bubbleGeometry : geometry;
+    let x = step * Math.min(1.65, span * .4) + Math.sin(angle) * .38;
+    let y = step * 1.02 - Math.sin(angle) * .18;
+    let z = (Math.cos(angle) - 1) * 1.35;
+    let rx = -.19;
+    let ry = Math.sin(angle) * .88 - .24;
+    let rz = .25;
+    let galleryWidth = Math.min(2.5, span * .51, 2.25 * aspect);
+    if (layout === 'slides') {
+      x = offset * span * spacing;
+      y = z = rx = ry = rz = 0;
+      galleryWidth = Math.min(span * .94, 5.35 * aspect);
+    } else if (layout === 'bubbles') {
+      x = step * span * .3;
+      y = Math.sin(offset * 1.55 + i * .8) * .94;
+      z = Math.cos(offset * 1.35) * .64;
+      rx = ry = rz = 0;
+      galleryWidth = Math.min(2.15, span * .39) * (1 + Math.cos(i * 2.1) * .18);
+    } else if (layout === 'wave') {
+      x = step * span * .34;
+      y = Math.sin(step * 1.13) * 1.03;
+      z = Math.cos(step) * .55;
+      rx = 0;
+      ry = Math.sin(step) * .42;
+      rz = Math.cos(step) * .13;
+    }
+    const phase = 1 - Math.min(1, Math.abs(offset));
+    const orbitMotion = layerEffects ? effects[effect][1](phase, strength * .55) : {};
     const focusWidth = Math.min(4.65 * camera.aspect, 4.5 * aspect) * (motion.scale ?? 1);
-    const width = mix(Math.min(galleryWidth, 2.3 * aspect), focusWidth, focus);
-    mesh.scale.set(width, width / aspect, 1);
+    const width = mix(galleryWidth * (orbitMotion.scale ?? 1), focusWidth, focus);
+    mesh.scale.set(width, bubble ? width : width / aspect, 1);
     mesh.position.set(
-      mix(offset * Math.min(1.05, camera.aspect * 1.55) + Math.sin(angle) * .56, motion.x ?? 0, focus),
-      mix(offset * .8 - Math.sin(angle) * .22, motion.y ?? 0, focus),
-      mix((Math.cos(angle) - 1) * 2.2, (motion.z ?? 0) + .6, focus)
+      mix(x + (orbitMotion.x ?? 0), motion.x ?? 0, focus),
+      mix(y + (orbitMotion.y ?? 0), motion.y ?? 0, focus),
+      mix(z + (orbitMotion.z ?? 0), (motion.z ?? 0) + .6, focus)
     );
     mesh.rotation.set(
-      mix(-.19, motion.rx ?? 0, focus),
-      mix(Math.sin(angle) * .88 - .24, motion.ry ?? 0, focus),
-      mix(.25, motion.rz ?? 0, focus)
+      mix(rx + (orbitMotion.rx ?? 0), motion.rx ?? 0, focus),
+      mix(ry + (orbitMotion.ry ?? 0), motion.ry ?? 0, focus),
+      mix(rz + (orbitMotion.rz ?? 0), motion.rz ?? 0, focus)
     );
-    mesh.material.opacity = i === selected ? mix(edge, motion.opacity ?? 1, focus) : edge * (1 - view.focus * .8);
+    const opacity = (layout === 'slides' && Math.abs(offset) < .95 ? 1 : edge) * (orbitMotion.opacity ?? 1);
+    mesh.material.opacity = i === selected ? mix(opacity, motion.opacity ?? 1, focus) : opacity * (1 - view.focus * .8);
     mesh.visible = mesh.material.opacity > .005;
   });
   renderer.render(scene, camera);
@@ -112,7 +147,7 @@ function refresh() {
     button.onclick = () => { if (!busy) select(i); };
     return button;
   }));
-  for (const id of ['effect','strength','prev','next','play','orbit','remove','random','export','webp']) {
+  for (const id of ['effect','strength','prev','next','play','orbit','remove','random','applyAll','export','webp']) {
     byId(id).disabled = !card || busy;
   }
 }
@@ -171,7 +206,7 @@ async function addImage(source, name) {
 }
 function lock(value) {
   busy = value;
-  for (const id of ['files','demo','ratio','duration','scope']) byId(id).disabled = value;
+  for (const id of ['files','demo','demoSet','ratio','duration','scope','layout','spacing','layerEffects']) byId(id).disabled = value;
   refresh();
 }
 async function importImages(files) {
@@ -207,10 +242,26 @@ stage.ondragover = e => { e.preventDefault(); stage.classList.add('drag'); };
 stage.ondragleave = () => stage.classList.remove('drag');
 stage.ondrop = e => { e.preventDefault(); stage.classList.remove('drag'); void importImages(e.dataTransfer.files); };
 byId('demo').onclick = () => {
-  const names = ['Ópalo','Umbral','Marea','Ascua','Niebla','Prisma'];
+  const set = byId('demoSet').value;
+  const names = {
+    orbital:['Ópalo','Umbral','Marea','Ascua','Niebla','Prisma'],
+    terrain:['Duna','Aurora','Sierra','Cañón','Isla','Cordillera','Estuario','Cumbre'],
+    signal:['Eco','Pulso','Ruido','Trama','Vector','Frecuencia','Rebote','Espectro']
+  }[set];
   const files = names.map((name, i) => {
-    const hue = 32 + i * 48;
-    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="900" height="700"><defs><radialGradient id="g"><stop stop-color="hsl(' + hue + ',65%,54%)"/><stop offset="1" stop-color="#161220"/></radialGradient></defs><rect width="900" height="700" fill="url(#g)"/><g stroke="#fff" opacity=".5" fill="none">' + Array.from({length:14}, (_, j) => '<ellipse cx="450" cy="330" rx="' + (80+j*16) + '" ry="' + (70+j*8) + '" transform="rotate(' + (i*22+j*8) + ' 450 330)"/>').join('') + '</g><text x="48" y="643" fill="white" font-size="52" font-family="serif">' + name + '</text></svg>';
+    const hue = (set === 'terrain' ? 190 : set === 'signal' ? 285 : 32) + i * 48;
+    const art = Array.from({length:14}, (_, j) => {
+      if (set === 'terrain') {
+        const y = 230 + j * 29;
+        return '<path d="M-20 '+ y +' Q180 '+ (y-180) +' 390 '+ (y-30) +' T920 '+ (y-115) +'" />';
+      }
+      if (set === 'signal') {
+        const size = 60 + j * 28;
+        return '<rect x="'+ (450-size/2) +'" y="'+ (330-size/2) +'" width="'+ size +'" height="'+ size +'" transform="rotate('+ (i*18+j*7) +' 450 330)"/>';
+      }
+      return '<ellipse cx="450" cy="330" rx="'+ (80+j*16) +'" ry="'+ (70+j*8) +'" transform="rotate('+ (i*22+j*8) +' 450 330)"/>';
+    }).join('');
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="900" height="700"><defs><radialGradient id="g"><stop stop-color="hsl(' + hue + ',65%,54%)"/><stop offset="1" stop-color="#161220"/></radialGradient></defs><rect width="900" height="700" fill="url(#g)"/><g stroke="#fff" opacity=".5" fill="none">' + art + '</g><text x="48" y="643" fill="white" font-size="52" font-family="serif">' + name + '</text></svg>';
     return new File([svg], name + '.svg', {type:'image/svg+xml'});
   });
   void importImages(files);
@@ -228,7 +279,22 @@ byId('orbit').onclick = () => {
 };
 byId('effect').onchange = e => { cards[selected].effect = Number(e.target.value); select(selected); };
 byId('strength').oninput = e => { cards[selected].strength = Number(e.target.value); };
-byId('random').onclick = randomize;
+byId('random').onclick = () => {
+  randomize();
+  status('Efectos asignados al azar sin repetir.');
+};
+byId('applyAll').onclick = () => {
+  const effect = Number(byId('effect').value);
+  cards.forEach(card => { card.effect = effect; });
+  status('Efecto aplicado a todas las imágenes.');
+};
+byId('layout').onchange = e => {
+  layout = e.target.value;
+  if (reduceMotion.matches) select(selected, false);
+  else if (cards.length) startOrbit();
+};
+byId('spacing').oninput = e => { spacing = Number(e.target.value); };
+byId('layerEffects').onchange = e => { layerEffects = e.target.checked; };
 byId('remove').onclick = () => {
   const [card] = cards.splice(selected, 1);
   scene.remove(card.mesh);
@@ -287,7 +353,7 @@ byId('export').onclick = async () => {
   const previous = selected;
   const wasSpinning = spinning;
   const helix = byId('scope').value === 'helix';
-  if (helix && cards.length < 2) { status('Importa al menos dos imágenes para exportar la hélice.'); return; }
+  if (helix && cards.length < 2) { status('Importa al menos dos imágenes para exportar el recorrido.'); return; }
   const indices = byId('scope').value === 'one' ? [selected] : cards.map((_, i) => i);
   const seconds = duration();
   lock(true);
