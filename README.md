@@ -1,11 +1,11 @@
 # AELITYX Motion Studio
 
-Editor web para animar imágenes en una hélice 3D. El procesamiento de archivos se realiza en el navegador.
+Editor web con hélice 3D, 20 efectos y exportación local WebP/WebM.
 
-```sh
-npm ci
-npm run dev
-npm run build
-```
+## Desarrollo
 
-Vercel: preset Vite, salida `dist`. Para grabar WebM usa un navegador con WebGL2 y MediaRecorder con VP8 o VP9. Los GIF y WebP animados se importan como imagen fija. Los archivos HEIC/HEIF usan un decodificador local. La grabación ocurre en tiempo real.
+Usa Node 22 LTS. Ejecuta `npm ci`, luego `npm run dev` o `npm run build`. Vercel usa el preset Vite y sirve `dist`.
+
+## Uso
+
+Importa hasta 20 tarjetas o abre la demo. Cada efecto admite intensidad. Las imágenes compatibles se convierten a WebP (2048 px máximo por lado). HEIC/HEIF se decodifica localmente. GIF y WebP animados se importan como tarjeta fija. WebM se graba en tiempo real y requiere un navegador con WebGL 2 y MediaRecorder compatible.

@@ -1,0 +1,294 @@
+import * as T from 'three';
+import { gsap } from 'gsap';
+import { effects } from './effects';
+import './style.css';
+
+const byId = id => document.getElementById(id);
+const stage = byId('stage');
+const status = message => { byId('status').textContent = message; };
+const scene = new T.Scene();
+scene.background = new T.Color('#171423');
+const camera = new T.PerspectiveCamera(40, 1, .1, 100);
+camera.position.z = 8;
+let renderer;
+try {
+  renderer = new T.WebGLRenderer({ antialias: true });
+} catch {
+  status('Activa WebGL 2 para abrir el escenario.');
+  throw new Error('WebGL 2 no disponible');
+}
+stage.prepend(renderer.domElement);
+const geometry = new T.PlaneGeometry(1, 1);
+const particles = new Float32Array(480 * 3);
+for (let i = 0; i < particles.length; i++) particles[i] = (Math.random() - .5) * 26;
+const dust = new T.BufferGeometry();
+dust.setAttribute('position', new T.BufferAttribute(particles, 3));
+scene.add(new T.Points(dust, new T.PointsMaterial({ color: '#ad8cc3', size: .045, transparent: true, opacity: .5 })));
+const cards = [];
+const view = { cursor: 0, focus: 0, progress: 0 };
+let selected = 0;
+let busy = false;
+let animation;
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+const ray = new T.Raycaster();
+
+function dimensions() {
+  return byId('ratio').value.split(',').map(Number);
+}
+function resize(full = false) {
+  const [width, height] = dimensions();
+  camera.aspect = width / height;
+  camera.updateProjectionMatrix();
+  const scale = Math.min((stage.clientWidth - 2) / width, (stage.clientHeight - 2) / height);
+  renderer.setSize(full ? width : Math.max(2, Math.round(width * scale)), full ? height : Math.max(2, Math.round(height * scale)), false);
+  renderer.domElement.style.width = Math.round(width * scale) + 'px';
+  renderer.domElement.style.height = Math.round(height * scale) + 'px';
+}
+new ResizeObserver(() => { if (!busy) resize(); }).observe(stage);
+byId('ratio').onchange = () => resize();
+
+const mix = T.MathUtils.lerp;
+renderer.setAnimationLoop(() => {
+  cards.forEach(({ mesh, aspect, effect, strength }, i) => {
+    const offset = i - view.cursor;
+    const angle = offset * .92;
+    const focus = i === selected ? view.focus : 0;
+    const motion = effects[effect][1](view.progress, strength);
+    const galleryWidth = Math.min(2.55, camera.aspect * 3.25);
+    const focusWidth = Math.min(4.65 * camera.aspect, 4.5 * aspect) * (motion.scale ?? 1);
+    const width = mix(Math.min(galleryWidth, 2.3 * aspect), focusWidth, focus);
+    mesh.scale.set(width, width / aspect, 1);
+    mesh.position.set(
+      mix(Math.sin(angle) * Math.min(2.9, camera.aspect * 4), motion.x ?? 0, focus),
+      mix(offset * .72, motion.y ?? 0, focus),
+      mix((Math.cos(angle) - 1) * 2.2, (motion.z ?? 0) + .6, focus)
+    );
+    mesh.rotation.set(focus * (motion.rx ?? 0), mix(-Math.sin(angle) * .8, motion.ry ?? 0, focus), focus * (motion.rz ?? 0));
+    mesh.material.opacity = i === selected ? mix(1, motion.opacity ?? 1, focus) : 1 - view.focus * .8;
+  });
+  renderer.render(scene, camera);
+});
+
+effects.forEach(([label], i) => byId('effect').add(new Option(label, i)));
+function refresh() {
+  const card = cards[selected];
+  byId('empty').hidden = Boolean(card);
+  byId('selected').textContent = card ? (selected + 1) + ' / ' + cards.length + ' · ' + card.name : 'Ninguna imagen seleccionada';
+  if (card) {
+    byId('effect').value = card.effect;
+    byId('strength').value = card.strength;
+  }
+  byId('film').replaceChildren(...cards.map((item, i) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.title = item.name;
+    button.setAttribute('aria-current', String(i === selected));
+    const image = new Image();
+    image.src = item.url;
+    image.alt = item.name;
+    button.append(image);
+    button.onclick = () => { if (!busy) select(i); };
+    return button;
+  }));
+  for (const id of ['effect','strength','prev','next','play','orbit','remove','random','export','webp']) {
+    byId(id).disabled = !card || busy;
+  }
+}
+function select(index, focus = true) {
+  if (!cards.length) return;
+  animation?.kill();
+  selected = (index + cards.length) % cards.length;
+  animation = gsap.to(view, { cursor:selected, focus: Number(focus), progress:0, duration:reduceMotion.matches ? 0 : .65, ease:'power3.out' });
+  refresh();
+}
+function randomize() {
+  const order = effects.map((_, i) => i);
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  cards.forEach((card, i) => { card.effect = order[i]; });
+  refresh();
+}
+function toWebP(canvas) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(blob => blob?.type === 'image/webp' ? resolve(blob) : reject(new Error('Este navegador no codifica WebP.')), 'image/webp', .92);
+  });
+}
+async function addImage(source, name) {
+  let url = URL.createObjectURL(source);
+  let image = new Image();
+  let blob;
+  try {
+    image.src = url;
+    await image.decode();
+    const scale = Math.min(1, 2048 / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+    blob = await toWebP(canvas);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+  url = URL.createObjectURL(blob);
+  image = new Image();
+  image.src = url;
+  try { await image.decode(); }
+  catch (error) { URL.revokeObjectURL(url); throw error; }
+  const texture = new T.Texture(image);
+  texture.colorSpace = T.SRGBColorSpace;
+  texture.needsUpdate = true;
+  const mesh = new T.Mesh(geometry, new T.MeshBasicMaterial({map:texture, side:T.DoubleSide, transparent:true}));
+  scene.add(mesh);
+  const available = effects.map((_, i) => i).filter(i => !cards.some(card => card.effect === i));
+  cards.push({name, url, mesh, aspect:image.width/image.height, effect:available[Math.floor(Math.random()*available.length)] ?? 0, strength:.75});
+}
+function lock(value) {
+  busy = value;
+  for (const id of ['files','demo','ratio','duration','scope']) byId(id).disabled = value;
+  refresh();
+}
+async function importImages(files) {
+  if (busy || !files.length) return;
+  lock(true);
+  const batch = Array.from(files).slice(0, 20 - cards.length);
+  const failures = [];
+  try {
+    for (const file of batch) {
+      status('Convirtiendo ' + file.name + '…');
+      try {
+        let source = file;
+        if (/\.hei[cf]$/i.test(file.name) || /image\/hei[cf]/i.test(file.type)) {
+          const { heicTo } = await import('heic-to');
+          source = await heicTo({blob:file,type:'image/png'});
+        }
+        await addImage(source, file.name);
+      } catch (error) { failures.push(file.name + ' (' + error.message + ')'); }
+    }
+  } finally {
+    lock(false);
+    select(selected, false);
+    status([batch.length - failures.length + ' importadas', files.length > batch.length ? 'Máximo 20 tarjetas' : '', failures.length ? 'Fallaron ' + failures.join(', ') : ''].filter(Boolean).join(' · '));
+  }
+}
+byId('files').onchange = e => {
+  const files = Array.from(e.target.files);
+  e.target.value = '';
+  void importImages(files);
+};
+stage.ondragover = e => { e.preventDefault(); stage.classList.add('drag'); };
+stage.ondragleave = () => stage.classList.remove('drag');
+stage.ondrop = e => { e.preventDefault(); stage.classList.remove('drag'); void importImages(e.dataTransfer.files); };
+byId('demo').onclick = () => {
+  const names = ['Ópalo','Umbral','Marea','Ascua','Niebla','Prisma'];
+  const files = names.map((name, i) => {
+    const hue = 32 + i * 48;
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="900" height="700"><defs><radialGradient id="g"><stop stop-color="hsl(' + hue + ',65%,54%)"/><stop offset="1" stop-color="#161220"/></radialGradient></defs><rect width="900" height="700" fill="url(#g)"/><g stroke="#fff" opacity=".5" fill="none">' + Array.from({length:14}, (_, j) => '<ellipse cx="450" cy="330" rx="' + (80+j*16) + '" ry="' + (70+j*8) + '" transform="rotate(' + (i*22+j*8) + ' 450 330)"/>').join('') + '</g><text x="48" y="643" fill="white" font-size="52" font-family="serif">' + name + '</text></svg>';
+    return new File([svg], name + '.svg', {type:'image/svg+xml'});
+  });
+  void importImages(files);
+};
+byId('prev').onclick = () => select(selected - 1, false);
+byId('next').onclick = () => select(selected + 1, false);
+byId('orbit').onclick = () => select(selected, false);
+byId('effect').onchange = e => { cards[selected].effect = Number(e.target.value); select(selected); };
+byId('strength').oninput = e => { cards[selected].strength = Number(e.target.value); };
+byId('random').onclick = randomize;
+byId('remove').onclick = () => {
+  const [card] = cards.splice(selected, 1);
+  scene.remove(card.mesh);
+  card.mesh.material.map.dispose();
+  card.mesh.material.dispose();
+  URL.revokeObjectURL(card.url);
+  selected = Math.max(0, Math.min(selected, cards.length - 1));
+  select(selected, false);
+  refresh();
+};
+stage.addEventListener('wheel', e => {
+  if (busy || !cards.length || Math.abs(e.deltaY) < 6) return;
+  e.preventDefault();
+  if (performance.now() - lastWheel < 230) return;
+  lastWheel = performance.now();
+  select(selected + Math.sign(e.deltaY), false);
+}, {passive:false});
+let lastWheel = -Infinity;
+let startX = null;
+const canvas = renderer.domElement;
+canvas.onpointerdown = e => { if (!busy) { startX = e.clientX; canvas.setPointerCapture(e.pointerId); } };
+canvas.onpointercancel = () => { startX = null; };
+canvas.onpointerup = e => {
+  if (busy || startX === null) return;
+  const delta = e.clientX - startX;
+  startX = null;
+  if (Math.abs(delta) > 20) { select(selected - Math.sign(delta), false); return; }
+  const bounds = canvas.getBoundingClientRect();
+  ray.setFromCamera(new T.Vector2((e.clientX-bounds.left)/bounds.width*2-1, 1-(e.clientY-bounds.top)/bounds.height*2), camera);
+  const hit = ray.intersectObjects(cards.map(card => card.mesh))[0];
+  if (hit) select(cards.findIndex(card => card.mesh === hit.object));
+};
+function duration() { return Math.max(1, Math.min(12, Number(byId('duration').value) || 3)); }
+function clip(timeline, index, seconds) {
+  const transition = Math.min(.42, seconds * .28);
+  timeline.set(view, {focus:0, progress:0, onComplete:() => { selected = index; }});
+  timeline.to(view, {cursor:index, focus:1, duration:transition, ease:'power2.inOut'});
+  timeline.to(view, {progress:1, duration:seconds-transition, ease:'none'});
+}
+byId('play').onclick = () => {
+  animation?.kill();
+  animation = gsap.timeline();
+  clip(animation, selected, duration());
+};
+function download(url, name) {
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name;
+  link.click();
+}
+byId('webp').onclick = () => download(cards[selected].url, cards[selected].name.replace(/\.[^.]+$/, '') + '.webp');
+byId('export').onclick = async () => {
+  const mime = ['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'].find(type => window.MediaRecorder?.isTypeSupported(type));
+  if (!mime || !canvas.captureStream) { status('Este navegador no graba WebM. Prueba Chrome o Edge.'); return; }
+  const previous = selected;
+  const indices = byId('scope').value === 'one' ? [selected] : cards.map((_, i) => i);
+  const seconds = duration();
+  lock(true);
+  animation?.kill();
+  let stream;
+  let recorder;
+  try {
+    resize(true);
+    Object.assign(view, {cursor:indices[0],focus:0,progress:0});
+    renderer.render(scene,camera);
+    stream = canvas.captureStream(30);
+    recorder = new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:8_000_000});
+    const chunks = [];
+    const result = new Promise((resolve,reject) => {
+      recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+      recorder.onstop = () => resolve(new Blob(chunks,{type:'video/webm'}));
+      recorder.onerror = e => reject(e.error ?? new Error('Falló la grabación.'));
+    });
+    recorder.start();
+    animation = gsap.timeline({
+      onUpdate:() => status('Grabando WebM · ' + Math.round(animation.progress()*100) + '%'),
+      onComplete:() => { if (recorder.state !== 'inactive') recorder.stop(); }
+    });
+    indices.forEach(index => clip(animation,index,seconds));
+    const blob = await result;
+    if (!blob.size) throw new Error('El video salió vacío.');
+    const url = URL.createObjectURL(blob);
+    download(url,'aelityx-motion.webm');
+    setTimeout(() => URL.revokeObjectURL(url),60_000);
+    status('WebM listo.');
+  } catch (error) {
+    status(error.message);
+  } finally {
+    animation?.kill();
+    if (recorder && recorder.state !== 'inactive') recorder.stop();
+    stream?.getTracks().forEach(track => track.stop());
+    resize();
+    lock(false);
+    select(previous,false);
+  }
+};
+refresh();
