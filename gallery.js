@@ -71,7 +71,8 @@ export function createCardSurface(texture, aspect) {
     cardAspect: { value: aspect },
     cardImageAspect: { value: aspect },
     cardSheen: { value: .6 },
-    cardMatte: { value: 0 }
+    cardMatte: { value: 0 },
+    cardPaper: { value: 0 }
   };
 
   material.onBeforeCompile = shader => {
@@ -88,6 +89,7 @@ export function createCardSurface(texture, aspect) {
       uniform float cardImageAspect;
       uniform float cardSheen;
       uniform float cardMatte;
+      uniform float cardPaper;
     ` + shader.fragmentShader.replace('#include <map_fragment>', `
       vec2 flatUv = vCardUv - .5;
       vec2 q = flatUv * 2.0;
@@ -123,6 +125,21 @@ export function createCardSurface(texture, aspect) {
       vec3 sphereColor = art.rgb * (.35 + .66 * lit)
         + vec3(.40, .56, .86) * (sheen * .35 + halo * .14);
       art.rgb = mix(art.rgb, sphereColor, cardOrb);
+      if (cardPaper > .5) {
+        vec2 printUv = flatUv / .887 + .5;
+        vec4 ink = texture2D(map, clamp(printUv, 0.0, 1.0));
+        float printEdge = .5 - max(abs(printUv.x - .5), abs(printUv.y - .5));
+        float printed = smoothstep(-.003, .003, printEdge) * ink.a;
+        vec2 grainUv = floor(vCardUv * 720.0);
+        float grain = fract(sin(dot(grainUv, vec2(12.9898, 78.233))) * 43758.5453);
+        vec3 stock = mix(vec3(.54, .44, .37), vec3(.81, .72, .61), vCardUv.y) * (.95 + grain * .07);
+        float frayX = .49 + .004 * sin(vCardUv.y * 129.0) + .002 * sin(vCardUv.y * 351.0);
+        float frayY = .49 + .005 * sin(vCardUv.x * 145.0) + .002 * cos(vCardUv.x * 287.0);
+        float paperEdge = min(frayX - abs(flatUv.x), frayY - abs(flatUv.y));
+        float edgeAa = max(fwidth(paperEdge), .0004);
+        art = vec4(mix(stock, ink.rgb * (.92 + gloss * .14), printed),
+          smoothstep(-edgeAa, edgeAa, paperEdge));
+      }
       diffuseColor *= art;
     `);
   };

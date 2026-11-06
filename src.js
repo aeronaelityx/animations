@@ -4,6 +4,8 @@ import { gsap } from 'gsap';
 import { effects } from './effects';
 import { createCardSurface, createUnfoldGeometry, ribbonPose, unfoldPose } from './gallery';
 import { materiaDemo } from './materia';
+import { paintCaption } from './caption';
+import { collagePose, createPoolScene } from './collages';
 import './style.css';
 
 const byId = id => document.getElementById(id);
@@ -30,6 +32,7 @@ const dust = new T.BufferGeometry();
 dust.setAttribute('position', new T.BufferAttribute(particles, 3));
 const stars = new T.Points(dust, new T.PointsMaterial({color:'#ad8cc3',size:.045,transparent:true,opacity:.5}));
 scene.add(stars);
+const pool = createPoolScene(scene);
 const backdrop = document.createElement('canvas');
 backdrop.width = backdrop.height = 256;
 const backdropMap = new T.CanvasTexture(backdrop);
@@ -65,78 +68,45 @@ updateBackground();
 
 const captionCanvas = document.createElement('canvas');
 captionCanvas.width = 1024;
-captionCanvas.height = 208;
+captionCanvas.height = 512;
 const captionMap = new T.CanvasTexture(captionCanvas);
 captionMap.colorSpace = T.SRGBColorSpace;
 const caption = new T.Sprite(new T.SpriteMaterial({map:captionMap,transparent:true,depthTest:false,depthWrite:false}));
 caption.renderOrder = 20;
 scene.add(caption);
 let captionKey;
+let captionPixels = 128;
 const textControls = ['font','align','titleSize','detailSize','titleColor','detailColor','captionColor','captionPosition'];
-function drawParagraph(ctx, text, y, alignment, lineHeight) {
-  const lines = [];
-  let words = [];
-  for (const word of text.trim().split(/\s+/)) {
-    if (words.length && ctx.measureText([...words,word].join(' ')).width > 940) {
-      lines.push(words);
-      words = [];
-    }
-    words.push(word);
-  }
-  if (words.length) lines.push(words);
-  lines.forEach((line, index) => {
-    const baseline = y + index * lineHeight;
-    if (alignment === 'justify' && index < lines.length - 1 && line.length > 1) {
-      const gap = (940 - line.reduce((sum, word) => sum + ctx.measureText(word).width,0)) / (line.length - 1);
-      let x = 42;
-      ctx.textAlign = 'left';
-      for (const word of line) {
-        ctx.fillText(word,x,baseline);
-        x += ctx.measureText(word).width + gap;
-      }
-    } else {
-      ctx.textAlign = alignment === 'justify' ? 'left' : alignment;
-      ctx.fillText(line.join(' '), alignment === 'center' ? 512 : alignment === 'right' ? 982 : 42,baseline,940);
-    }
-  });
-}
-
 function updateCaption(card, alpha) {
   caption.visible = Boolean(card && alpha > .01);
-  if (!caption.visible) return;
+  if (!caption.visible) return 0;
+
   const settings = textControls.map(id => byId(id).value);
-  const [font,alignment,titleSize,detailSize,titleColor,detailColor,background,position] = settings;
-  const key = JSON.stringify([card.title || card.name,card.detail,...settings]);
+  const [font, align, titleSize, detailSize, titleColor, detailColor, background, position] = settings;
+  const title = card.title.trim() || card.name;
+  const width = Math.min(4.6, camera.aspect * 4.9);
+  const maxHeight = Math.min(captionCanvas.height, Math.floor(5.82 * .29 * captionCanvas.width / width));
+  const key = JSON.stringify([title, card.detail, maxHeight, ...settings]);
   if (key !== captionKey) {
-    const ctx = captionCanvas.getContext('2d');
-    ctx.clearRect(0,0,1024,208);
-    ctx.fillStyle = background + 'ed';
-    ctx.beginPath();
-    ctx.roundRect(3,3,1018,202,26);
-    ctx.fill();
-    ctx.strokeStyle = '#ffffff35';
-    ctx.lineWidth = 3;
-    ctx.stroke();
-    const titlePx = T.MathUtils.clamp(Number(titleSize) || 58,28,80);
-    const detailPx = T.MathUtils.clamp(Number(detailSize) || 34,18,46);
-    ctx.fillStyle = titleColor;
-    ctx.font = '600 ' + titlePx + 'px ' + font;
-    ctx.textAlign = alignment === 'justify' ? 'left' : alignment;
-    ctx.fillText(card.title || card.name,alignment === 'center' ? 512 : alignment === 'right' ? 982 : 42,92,940);
-    ctx.fillStyle = detailColor;
-    ctx.font = detailPx + 'px ' + font;
-    drawParagraph(ctx,card.detail,128,alignment,detailPx * 1.02);
+    captionPixels = paintCaption(captionCanvas, title, card.detail, {
+      font, align, titleColor, detailColor, background,
+      titleSize: T.MathUtils.clamp(Number(titleSize) || 58, 28, 80),
+      detailSize: T.MathUtils.clamp(Number(detailSize) || 34, 18, 46)
+    }, maxHeight);
+    // Keep the GPU texture size fixed and sample only the painted portion.
+    captionMap.repeat.y = captionPixels / captionCanvas.height;
+    captionMap.offset.y = 1 - captionMap.repeat.y;
     captionMap.needsUpdate = true;
     captionKey = key;
   }
-  const width = Math.min(4.6,camera.aspect * 4.9);
-  const height = width * 208 / 1024;
-  const planeDistance = 8;
+
+  const height = width * captionPixels / captionCanvas.width;
   const fit = Math.tan(T.MathUtils.degToRad(camera.fov / 2)) / Math.tan(T.MathUtils.degToRad(20));
-  caption.scale.set(width * fit,height * fit,1);
-  caption.position.set(0,(2.69 - height / 2) * (position === "top" ? 1 : -1) * fit,-planeDistance);
+  caption.scale.set(width * fit, height * fit, 1);
+  caption.position.set(0, (2.69 - height / 2) * (position === 'top' ? 1 : -1) * fit, -8);
   caption.position.applyQuaternion(camera.quaternion).add(camera.position);
   caption.material.opacity = alpha;
+  return height;
 }
 const cards = [];
 const view = { cursor: 0, focus: 0, progress: 0 };
@@ -147,7 +117,7 @@ let spinning = false;
 let tourPaused = false;
 let lastFrame;
 let layout = byId('layout').value;
-const flowLayouts = new Set(['radiant', 'bubbles']);
+const flowLayouts = new Set(['radiant', 'bubbles', 'collage']);
 let spacing = 1.35;
 const spotlightPreference = new Map();
 let layerEffects = byId("layerEffects").checked;
@@ -188,10 +158,12 @@ function tourCursor(position, featuredTour = layerEffects) {
   return turn + smooth(position - turn, .72, 1);
 }
 function tourAvailable() {
-  return cards.length > 1 || (cards.length === 1 && layout === 'bubbles' && layerEffects);
+  return cards.length > 1 || (cards.length === 1 &&
+    (layout === 'collage' || layout === 'pool' || (layout === 'bubbles' && layerEffects)));
 }
 function currentCardIndex() {
-  return spinning ? Math.round(tourCursor(tour.position)) : selected;
+  if (!spinning) return selected;
+  return layout === 'pool' ? Math.floor(tour.position) : Math.round(tourCursor(tour.position));
 }
 function drawFrame(time) {
   const delta = T.MathUtils.clamp((time - (lastFrame ?? time)) / 1000, 0, .05);
@@ -203,13 +175,40 @@ function drawFrame(time) {
   const turn = Math.floor(tour.position);
   const beat = tour.position - turn;
   const spotlight = touring && layerEffects;
-  const featured = spotlight ? wrap(turn,cards.length) : selected;
+  const isPool = layout === 'pool';
+  const featured = spotlight || (touring && isPool) ? wrap(turn,cards.length) : selected;
   const emphasis = spotlight ? smooth(beat,.12,.32) * (1 - smooth(beat,.73,.94)) : touring ? 0 : view.focus;
   const cursor = touring ? tourCursor(tour.position) : view.cursor;
   const progress = spotlight ? smooth(beat,.2,.93) : view.progress;
   const active = cards[featured];
-  moveCamera(camera,active?.cinema ?? defaultCamera,progress,active?.engine !== 'preset' ? emphasis : 0,featured);
-  const captionY = byId("captionPosition").value === "top" ? -.44 : .44;
+  moveCamera(camera,active?.cinema ?? defaultCamera,progress,!isPool && active?.engine !== 'preset' ? emphasis : 0,featured);
+  const captionSign = byId('captionPosition').value === 'top' ? -1 : 1;
+  if (isPool) {
+    const phase = touring ? beat : view.progress;
+    const followsTour = touring || tourPaused;
+    const animated = followsTour || view.progress > 0;
+    const assembly = animated ? smooth(phase, .08, .41) * (1 - smooth(phase, .76, 1)) : view.focus;
+    const alpha = (followsTour || (busy && animated)) && cards.length > 1
+      ? smooth(phase, 0, .13) * (1 - smooth(phase, .86, 1)) : 1;
+    const flow = (followsTour ? tour.position / Math.max(1, cards.length) : phase) * Math.PI * 2;
+    const captionHeight = updateCaption(active, smooth(assembly, .58, .94) * alpha);
+    const motion = active && layerEffects ? sampleMotion(active, smooth(phase, .28, .85)) : {};
+    cards.forEach(card => {
+      card.mesh.visible = false;
+      for (const layer of Object.values(card.layers)) layer.visible = false;
+    });
+    pool.draw({
+      card: active, aspect: camera.aspect, phase, flow, assembly, alpha, spacing, captionHeight,
+      captionSign, motion, background: byId('background').value
+    });
+    renderer.render(scene, camera);
+    return;
+  }
+
+  pool.hide();
+  const captionHeight = updateCaption(active, layout === 'bubbles' ? smooth(emphasis, .57, .93) : emphasis);
+  const extraCaption = Math.max(0, captionHeight - .91);
+  const captionY = captionSign * (.44 + extraCaption * .5);
   cards.forEach((card, i) => {
     const { mesh, surface, aspect, strength, engine, cinema } = card;
     const half = cards.length / 2;
@@ -233,6 +232,7 @@ function drawFrame(time) {
     surface.cardRound.value = Number(radiant || bubble);
     surface.cardAspect.value = renderAspect;
     surface.cardMatte.value = Number(bubble && !parallax);
+    surface.cardPaper.value = Number(layout === 'collage');
 
     const span = camera.aspect * 5.82;
     const step = offset * spacing;
@@ -243,7 +243,13 @@ function drawFrame(time) {
     let ry = Math.sin(angle) * .88 - .24;
     let rz = .25;
     let galleryWidth = Math.min(2.5, span * .51, 2.25 * aspect);
-    if (radiant) {
+    let galleryOpacity = edge;
+    if (layout === 'collage') {
+      const pose = collagePose(i, cursor, cards.length, spacing, camera.aspect, aspect);
+      ({ x, y, z, rx, ry, rz } = pose);
+      galleryWidth = pose.width;
+      galleryOpacity = pose.opacity;
+    } else if (radiant) {
       const pose = ribbonPose(offset, spacing, camera.aspect, aspect);
       ({ x, y, z, rx, ry, rz } = pose);
       galleryWidth = pose.width;
@@ -278,7 +284,7 @@ function drawFrame(time) {
       ry = Math.sin(step) * .42;
       rz = Math.cos(step) * .13;
     }
-    const focusWidth = Math.min(camera.aspect * 4.25, 3.62 * renderAspect) * (motion.scale ?? 1);
+    const focusWidth = Math.min(camera.aspect * 4.25, (3.62 - extraCaption) * renderAspect) * (motion.scale ?? 1);
     const width = mix(galleryWidth, focusWidth, focus);
     mesh.scale.set(width, width / renderAspect, 1);
     mesh.position.set(
@@ -293,7 +299,7 @@ function drawFrame(time) {
     );
     surface.cardSheen.value = .66 + mesh.rotation.y * .18;
     const ribbonFade = radiant ? 1 - .38 * smooth(Math.abs(offset), 1.2, 3.25) : 1;
-    const opacity = (layout === 'slides' && Math.abs(offset) < .95 ? 1 : edge) * ribbonFade;
+    const opacity = (layout === 'slides' && Math.abs(offset) < .95 ? 1 : galleryOpacity) * ribbonFade;
     mesh.renderOrder = focus > .01 ? 1 : 0;
     mesh.material.opacity = i === featured ? mix(opacity, motion.opacity ?? 1, focus) : opacity * (1 - emphasis * (layout === "helix" ? .94 : .72));
     mesh.visible = mesh.material.opacity > .005;
@@ -309,7 +315,6 @@ function drawFrame(time) {
       layer.material.opacity = mesh.material.opacity * (bubble ? smooth(focus, .91, 1) : focus);
     }
   });
-  updateCaption(active, layout === "bubbles" ? smooth(emphasis, .57, .93) : emphasis);
   renderer.render(scene, camera);
 }
 renderer.setAnimationLoop(drawFrame);
@@ -392,6 +397,7 @@ function select(index, focus = true) {
   setSpinning(false);
   tourPaused = false;
   selected = wrap(index, cards.length);
+  if (layout === 'pool') view.progress = 0;
   const half = cards.length / 2;
   const cursor = view.cursor + wrap(selected - view.cursor + half, cards.length) - half;
   animation = gsap.to(view, { cursor, focus: Number(focus), progress:0, duration:reduceMotion.matches ? 0 : .65, ease:'power3.out' });
@@ -520,7 +526,12 @@ function startOrbit(resume = false) {
 byId('orbit').onclick = () => {
   if (spinning) {
     view.cursor = tourCursor(tour.position);
-    if (layerEffects && tourAvailable()) {
+    if (layout === 'pool' && tourAvailable()) {
+      selected = wrap(Math.floor(tour.position), cards.length);
+      view.focus = 0;
+      view.progress = tour.position % 1;
+      refresh();
+    } else if (layerEffects && tourAvailable()) {
       selected = wrap(Math.floor(tour.position), cards.length);
       const beat = tour.position % 1;
       view.focus = smooth(beat,.12,.32) * (1 - smooth(beat,.73,.94));
@@ -605,14 +616,16 @@ byId('applyAll').onclick = () => {
 byId('layout').onchange = e => {
   if (spinning) view.cursor = tourCursor(tour.position);
   layout = e.target.value;
-  layerEffects = spotlightPreference.get(layout) ?? layout !== 'radiant';
+  layerEffects = spotlightPreference.get(layout) ?? !['radiant', 'collage', 'pool'].includes(layout);
   byId('layerEffects').checked = layerEffects;
   byId('motionNote').textContent = {
     radiant: 'Las tarjetas alternan cara y canto a lo largo de una diagonal.',
     bubbles: 'Cada esfera se despliega, muestra su ficha y vuelve a cerrarse.',
     helix: 'Las tarjetas giran hacia un punto de fuga.',
     slides: 'Las imágenes avanzan de derecha a izquierda.',
-    wave: 'Las imágenes suben y bajan a medida que avanzan.'
+    wave: 'Las imágenes suben y bajan a medida que avanzan.',
+    collage: 'Los recortes giran en capas, con un recorrido continuo.',
+    pool: 'Nueve piezas flotan, se juntan sobre el agua y vuelven a separarse.'
   }[layout];
   if (reduceMotion.matches) select(selected, false);
   else if (cards.length) startOrbit();
@@ -653,11 +666,20 @@ canvas.onpointerup = e => {
   if (Math.abs(delta) > 20) { select(Math.round(spinning ? tourCursor(tour.position) : view.cursor) - Math.sign(delta), false); return; }
   const bounds = canvas.getBoundingClientRect();
   ray.setFromCamera(new T.Vector2((e.clientX-bounds.left)/bounds.width*2-1, 1-(e.clientY-bounds.top)/bounds.height*2), camera);
+  if (layout === 'pool') {
+    if (pool.contains(ray)) select(currentCardIndex());
+    return;
+  }
   const hit = ray.intersectObjects(cards.map(card => card.mesh).filter(mesh => mesh.visible))[0];
   if (hit) select(cards.findIndex(card => card.mesh === hit.object));
 };
 function duration() { return Math.max(1, Math.min(12, Number(byId('duration').value) || 3)); }
 function clip(timeline, index, seconds) {
+  if (layout === 'pool') {
+    timeline.set(view, {cursor:index, focus:0, progress:0, onComplete:() => { selected = index; }});
+    timeline.to(view, {progress:1, duration:seconds, ease:'none'});
+    return;
+  }
   const transition = Math.min(.42, seconds * .28);
   timeline.set(view, {focus:0, progress:0, onComplete:() => { selected = index; }});
   timeline.to(view, {cursor:index, focus:1, duration:transition, ease:'power2.inOut'});
