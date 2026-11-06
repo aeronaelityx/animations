@@ -63,33 +63,67 @@ const caption = new T.Sprite(new T.SpriteMaterial({map:captionMap,transparent:tr
 caption.renderOrder = 20;
 scene.add(caption);
 let captionKey;
+const textControls = ['font','align','titleSize','detailSize','titleColor','detailColor','captionColor','captionPosition'];
+function drawParagraph(ctx, text, y, alignment, lineHeight) {
+  const lines = [];
+  let words = [];
+  for (const word of text.trim().split(/\s+/)) {
+    if (words.length && ctx.measureText([...words,word].join(' ')).width > 940) {
+      lines.push(words);
+      words = [];
+    }
+    words.push(word);
+  }
+  if (words.length) lines.push(words);
+  lines.forEach((line, index) => {
+    const baseline = y + index * lineHeight;
+    if (alignment === 'justify' && index < lines.length - 1 && line.length > 1) {
+      const gap = (940 - line.reduce((sum, word) => sum + ctx.measureText(word).width,0)) / (line.length - 1);
+      let x = 42;
+      ctx.textAlign = 'left';
+      for (const word of line) {
+        ctx.fillText(word,x,baseline);
+        x += ctx.measureText(word).width + gap;
+      }
+    } else {
+      ctx.textAlign = alignment === 'justify' ? 'left' : alignment;
+      ctx.fillText(line.join(' '), alignment === 'center' ? 512 : alignment === 'right' ? 982 : 42,baseline,940);
+    }
+  });
+}
+
 function updateCaption(card, alpha) {
   caption.visible = Boolean(card && alpha > .01);
   if (!caption.visible) return;
-  const key = JSON.stringify([card.title || card.name,card.detail]);
+  const settings = textControls.map(id => byId(id).value);
+  const [font,alignment,titleSize,detailSize,titleColor,detailColor,background,position] = settings;
+  const key = JSON.stringify([card.title || card.name,card.detail,...settings]);
   if (key !== captionKey) {
     const ctx = captionCanvas.getContext('2d');
     ctx.clearRect(0,0,1024,208);
-    ctx.fillStyle = '#11111bed';
+    ctx.fillStyle = background + 'ed';
     ctx.beginPath();
     ctx.roundRect(3,3,1018,202,26);
     ctx.fill();
     ctx.strokeStyle = '#ffffff35';
     ctx.lineWidth = 3;
     ctx.stroke();
-    ctx.fillStyle = '#fff7ed';
-    ctx.font = '600 58px Georgia';
-    ctx.fillText(card.title || card.name,42,89,940);
-    ctx.fillStyle = '#e0d7e6';
-    ctx.font = '34px system-ui';
-    ctx.fillText(card.detail,42,154,940);
+    const titlePx = T.MathUtils.clamp(Number(titleSize) || 58,28,80);
+    const detailPx = T.MathUtils.clamp(Number(detailSize) || 34,18,46);
+    ctx.fillStyle = titleColor;
+    ctx.font = '600 ' + titlePx + 'px ' + font;
+    ctx.textAlign = alignment === 'justify' ? 'left' : alignment;
+    ctx.fillText(card.title || card.name,alignment === 'center' ? 512 : alignment === 'right' ? 982 : 42,92,940);
+    ctx.fillStyle = detailColor;
+    ctx.font = detailPx + 'px ' + font;
+    drawParagraph(ctx,card.detail,128,alignment,detailPx * 1.02);
     captionMap.needsUpdate = true;
     captionKey = key;
   }
   const width = Math.min(4.6,camera.aspect * 4.9);
   const height = width * 208 / 1024;
   caption.scale.set(width,height,1);
-  caption.position.set(0,-2.69 + height / 2,0);
+  caption.position.set(0,(2.69 - height / 2) * (position === "top" ? 1 : -1),0);
   caption.material.opacity = alpha;
 }
 const cards = [];
@@ -152,7 +186,7 @@ function drawFrame(time) {
     const angle = offset * Math.min(1.6, 6.28 / Math.min(cards.length, 7));
     const edge = cards.length === 1 ? 1 : T.MathUtils.smoothstep(half - Math.abs(offset), 0, .48);
     const focus = i === featured ? emphasis : 0;
-    const motion = effects[effect][1](progress, strength);
+    const motion = sampleMotion(cards[i],progress);
     const span = camera.aspect * 5.82;
     const step = offset * spacing;
     const bubble = layout === 'bubbles';
@@ -164,7 +198,18 @@ function drawFrame(time) {
     let ry = Math.sin(angle) * .88 - .24;
     let rz = .25;
     let galleryWidth = Math.min(2.5, span * .51, 2.25 * aspect);
-    if (layout === 'slides') {
+    if (layout === 'helix') {
+      const depth = offset + half;
+      const radius = Math.exp(-depth * .32 / spacing);
+      const theta = offset * 2.4 + cursor * (Math.PI * 2 / cards.length);
+      x = Math.cos(theta) * Math.min(span * .40,3.2) * radius;
+      y = Math.sin(theta) * 2.24 * radius;
+      z = -depth * 1.1;
+      rx = -.12;
+      ry = Math.sin(theta) * .30;
+      rz = Math.cos(theta) * .21;
+      galleryWidth = Math.min(span * .28,1.67 * aspect,1.72) * Math.pow(radius,.55);
+    } else if (layout === 'slides') {
       x = offset * span * spacing;
       y = z = rx = ry = rz = 0;
       galleryWidth = Math.min(span * .94, 5.35 * aspect);
@@ -187,7 +232,7 @@ function drawFrame(time) {
     mesh.scale.set(width, bubble ? width : width / aspect, 1);
     mesh.position.set(
       mix(x, motion.x ?? 0, focus),
-      mix(y, .45 + (motion.y ?? 0), focus),
+      mix(y, (byId("captionPosition").value === "top" ? -.45 : .45) + (motion.y ?? 0), focus),
       mix(z, (motion.z ?? 0) + .42, focus)
     );
     mesh.rotation.set(
@@ -196,7 +241,7 @@ function drawFrame(time) {
       mix(rz, motion.rz ?? 0, focus)
     );
     const opacity = layout === 'slides' && Math.abs(offset) < .95 ? 1 : edge;
-    mesh.material.opacity = i === featured ? mix(opacity, motion.opacity ?? 1, focus) : opacity * (1 - emphasis * .58);
+    mesh.material.opacity = i === featured ? mix(opacity, motion.opacity ?? 1, focus) : opacity * (1 - emphasis * (layout === "helix" ? .94 : .58));
     mesh.visible = mesh.material.opacity > .005;
   });
   updateCaption(cards[featured], emphasis);
@@ -204,9 +249,48 @@ function drawFrame(time) {
 }
 renderer.setAnimationLoop(drawFrame);
 
+const motionDefaults = {x:0,y:0,z:0,rx:0,ry:0,rz:0,scale:1,opacity:1};
+function sampleMotion(card,t) {
+  if (!card.frames) return effects[card.effect][1](t,card.strength);
+  const end = card.frames.findIndex(frame => frame.t >= t);
+  if (end <= 0) return card.frames[end === 0 ? 0 : card.frames.length - 1];
+  const left = card.frames[end - 1];
+  const right = card.frames[end];
+  const weight = (t - left.t) / (right.t - left.t);
+  return Object.fromEntries(Object.entries(motionDefaults).map(([key,value]) => [key,mix(left[key] ?? value,right[key] ?? value,weight)]));
+}
+function syncCode(card) {
+  byId('presetSource').value = card ? effects[card.effect][1].toString() : '';
+  const frames = card?.frames ?? (card ? Array.from({length:9},(_,i) => {
+    const t = i / 8;
+    const values = effects[card.effect][1](t,card.strength);
+    return {t,...Object.fromEntries(Object.entries(values).map(([key,value]) => [key,Number(value.toFixed(3))]))};
+  }) : []);
+  byId('motionCode').value = '[\n' + frames.map(frame => '  ' + JSON.stringify(frame)).join(',\n') + '\n]';
+}
+byId('applyCode').onclick = () => {
+  try {
+    const frames = JSON.parse(byId('motionCode').value);
+    if (!Array.isArray(frames) || frames.length < 2 || frames.length > 120 || frames[0]?.t !== 0 || frames.at(-1)?.t !== 1 || frames.some((frame,i) =>
+      !frame || Array.isArray(frame) || typeof frame !== 'object' || !Number.isFinite(frame.t) || (i > 0 && frame.t <= frames[i-1].t) ||
+      Object.entries(frame).some(([key,value]) => !Number.isFinite(value) || (key !== 't' && (!Object.hasOwn(motionDefaults,key) || Math.abs(value) > 8)) || (key === 'scale' && value <= 0) || (key === 'opacity' && (value < 0 || value > 1))
+    ))) throw new Error('Usa de 2 a 120 fotogramas ordenados, desde t=0 hasta t=1, con valores válidos.');
+    cards[selected].frames = frames;
+    byId('codeStatus').textContent = 'Código aplicado a esta imagen.';
+    byId('play').click();
+  } catch (error) {
+    byId('codeStatus').textContent = error instanceof SyntaxError ? 'Revisa la sintaxis JSON.' : error.message;
+  }
+};
+byId('resetCode').onclick = () => {
+  delete cards[selected].frames;
+  syncCode(cards[selected]);
+  byId('codeStatus').textContent = 'Preset restaurado.';
+};
 effects.forEach(([label], i) => byId('effect').add(new Option(label, i)));
 function refresh() {
   const card = cards[selected];
+  syncCode(card);
   byId('empty').hidden = Boolean(card);
   byId('selected').textContent = card ? (selected + 1) + ' / ' + cards.length + ' · ' + card.name : 'Ninguna imagen seleccionada';
   if (card) {
@@ -227,7 +311,7 @@ function refresh() {
     button.onclick = () => { if (!busy) select(i); };
     return button;
   }));
-  for (const id of ['cardTitle','cardDetail','effect','strength','prev','next','play','orbit','remove','random','applyAll','export','webp']) {
+  for (const id of ['applyCode','resetCode','motionCode','cardTitle','cardDetail','effect','strength','prev','next','play','orbit','remove','random','applyAll','export','webp']) {
     byId(id).disabled = !card || busy;
   }
 }
@@ -248,7 +332,7 @@ function randomize() {
     const j = Math.floor(Math.random() * (i + 1));
     [order[i], order[j]] = [order[j], order[i]];
   }
-  cards.forEach((card, i) => { card.effect = order[i]; });
+  cards.forEach((card, i) => { card.effect = order[i]; delete card.frames; });
   refresh();
 }
 function toWebP(canvas) {
@@ -287,7 +371,7 @@ async function addImage(source, name) {
 }
 function lock(value) {
   busy = value;
-  for (const id of ['files','demo','demoSet','ratio','duration','scope','layout','spacing','layerEffects','background','finish']) byId(id).disabled = value;
+  for (const id of ['files','demo','demoSet','ratio','duration','scope','layout','spacing','layerEffects','background','finish',...textControls]) byId(id).disabled = value;
   refresh();
 }
 async function importImages(files) {
@@ -359,7 +443,7 @@ byId('orbit').onclick = () => {
   if (spinning) { view.cursor = tour.position; setSpinning(false); }
   else startOrbit();
 };
-byId('effect').onchange = e => { cards[selected].effect = Number(e.target.value); select(selected); };
+byId('effect').onchange = e => { cards[selected].effect = Number(e.target.value); delete cards[selected].frames; select(selected); };
 byId('cardTitle').oninput = e => { cards[selected].title = e.target.value; };
 byId('cardDetail').oninput = e => { cards[selected].detail = e.target.value; };
 byId('strength').oninput = e => { cards[selected].strength = Number(e.target.value); };
@@ -369,7 +453,8 @@ byId('random').onclick = () => {
 };
 byId('applyAll').onclick = () => {
   const effect = Number(byId('effect').value);
-  cards.forEach(card => { card.effect = effect; });
+  cards.forEach(card => { card.effect = effect; delete card.frames; });
+  syncCode(cards[selected]);
   status('Efecto aplicado a todas las imágenes.');
 };
 byId('layout').onchange = e => {
