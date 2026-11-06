@@ -26,3 +26,14 @@ details{border-top:1px solid var(--line);padding-top:10px}summary{cursor:pointer
   font-size: .82rem;
   line-height: 1.45;
 }
+
+.film-tools{display:flex;align-items:center;justify-content:space-between;gap:8px 16px;flex-wrap:wrap;color:var(--muted);font-size:.8rem;margin-bottom:4px}
+.film-tools div{display:flex;gap:6px}
+.film-tools button{font-size:.8rem;padding:5px 9px}
+#film button{position:relative}
+#film button[draggable="true"]{cursor:grab}
+#film button.film-dragging{opacity:.45}
+.film-number{position:absolute;left:6px;bottom:6px;padding:1px 4px;border-radius:3px;background:#100f16e8;color:#fff;font:600 .69rem/1.4 system-ui,sans-serif;pointer-events:none}
+#film button[data-drop]::after{content:"";position:absolute;top:1px;bottom:1px;width:3px;border-radius:3px;background:var(--accent);pointer-events:none}
+#film button[data-drop="before"]::after{left:0}
+#film button[data-drop="after"]::after{right:0}

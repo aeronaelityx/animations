@@ -358,7 +358,9 @@ byId('resetCode').onclick = () => {
   byId('codeStatus').textContent = 'Preset restaurado.';
 };
 effects.forEach(([label], i) => byId('effect').add(new Option(label, i)));
+let draggedCard;
 function refresh() {
+  draggedCard = null;
   const card = cards[selected];
   syncCode(card);
   byId('empty').hidden = Boolean(card);
@@ -374,6 +376,9 @@ function refresh() {
     byId('effect').value = card.effect;
     byId('strength').value = card.strength;
   }
+  byId('filmTools').hidden = cards.length < 2;
+  byId('moveEarlier').disabled = busy || selected === 0;
+  byId('moveLater').disabled = busy || selected >= cards.length - 1;
   byId('film').replaceChildren(...cards.map((item, i) => {
     const button = document.createElement('button');
     button.type = 'button';
@@ -381,9 +386,49 @@ function refresh() {
     button.setAttribute('aria-current', String(i === selected));
     const image = new Image();
     image.src = item.url;
-    image.alt = item.name;
-    button.append(image);
+    image.alt = '';
+    image.draggable = false;
+    button.disabled = busy;
+    button.draggable = !busy && cards.length > 1;
+    button.setAttribute('aria-label', (i + 1) + '. ' + item.name);
+    const number = document.createElement('span');
+    number.className = 'film-number';
+    number.textContent = i + 1;
+    number.setAttribute('aria-hidden', 'true');
+    button.append(image, number);
     button.onclick = () => { if (!busy) select(i); };
+    button.ondragstart = event => {
+      if (busy || !button.draggable) { event.preventDefault(); return; }
+      draggedCard = item;
+      event.dataTransfer.setData('text/plain', item.name);
+      event.dataTransfer.effectAllowed = 'move';
+      button.classList.add('film-dragging');
+    };
+    button.ondragend = () => {
+      draggedCard = null;
+      button.classList.remove('film-dragging');
+      byId('film').querySelector('[data-drop]')?.removeAttribute('data-drop');
+    };
+    button.ondragover = event => {
+      if (!draggedCard || draggedCard === item || busy) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      const box = button.getBoundingClientRect();
+      button.dataset.drop = event.clientX < box.left + box.width / 2 ? 'before' : 'after';
+    };
+    button.ondragleave = event => {
+      if (!button.contains(event.relatedTarget)) delete button.dataset.drop;
+    };
+    button.ondrop = event => {
+      if (!draggedCard || busy) return;
+      event.preventDefault();
+      const from = cards.indexOf(draggedCard);
+      const box = button.getBoundingClientRect();
+      const boundary = i + Number(event.clientX >= box.left + box.width / 2);
+      draggedCard = null;
+      delete button.dataset.drop;
+      moveImage(from, boundary - Number(from < boundary));
+    };
     return button;
   }));
   for (const id of ['engine','cameraMode','restoreCamera','middle','foreground','depthMap',...cameraFields,'applyCode','resetCode','motionCode','cardTitle','cardDetail','effect','strength','prev','next','play','orbit','remove','random','applyAll','export','webp']) {
@@ -403,6 +448,22 @@ function select(index, focus = true) {
   animation = gsap.to(view, { cursor, focus: Number(focus), progress:0, duration:reduceMotion.matches ? 0 : .65, ease:'power3.out' });
   refresh();
 }
+function moveImage(from, to, focusControl) {
+  if (busy || from < 0 || from >= cards.length || to < 0 || to >= cards.length || from === to) return;
+  const [card] = cards.splice(from, 1);
+  cards.splice(to, 0, card);
+  select(to, false);
+  const thumbnail = byId('film').children[to];
+  thumbnail.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  if (focusControl) {
+    const control = byId(focusControl);
+    (control.disabled ? thumbnail : control).focus({ preventScroll: true });
+  }
+  status(card.name + ' se movió a la posición ' + (to + 1) + ' de ' + cards.length + '.');
+}
+byId('moveEarlier').onclick = () => moveImage(selected, selected - 1, 'moveEarlier');
+byId('moveLater').onclick = () => moveImage(selected, selected + 1, 'moveLater');
+
 function randomize() {
   const order = effects.map((_, i) => i);
   for (let i = order.length - 1; i > 0; i--) {

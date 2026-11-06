@@ -4,7 +4,14 @@
 <main><section class="workspace"><div class="intro"><div><h1>Galería orbital</h1><p>Convierte tus imágenes en una secuencia de movimiento.</p></div><div class="pair"><select id="demoSet" aria-label="Colección de ejemplo"><option value="materia">Materia</option><option value="orbital">Órbitas</option><option value="terrain">Horizontes</option><option value="signal">Señales</option></select><button id="demo">Cargar demo</button></div></div>
 <div id="stage"><div id="empty"><strong>El escenario está listo</strong><p>Arrastra imágenes o carga una demo para probar el movimiento.</p></div></div>
 <nav aria-label="Escenario"><button id="prev" aria-label="Anterior">←</button><button id="next" aria-label="Siguiente">→</button><button id="orbit" aria-pressed="false">Reproducir recorrido</button><button id="play">Previsualizar efecto</button></nav>
-<div id="film" aria-label="Imágenes"></div></section>
+<div id="filmTools" class="film-tools" hidden>
+  <span>Orden de aparición · arrastra las miniaturas o mueve la seleccionada</span>
+  <div role="group" aria-label="Orden de la imagen seleccionada">
+    <button type="button" id="moveEarlier" title="Mover antes" aria-label="Mover imagen antes">← Antes</button>
+    <button type="button" id="moveLater" title="Mover después" aria-label="Mover imagen después">Después →</button>
+  </div>
+</div>
+<div id="film" aria-label="Imágenes en orden de aparición"></div></section>
 <aside class="left"><section><h2>Imágenes</h2><label class="import">+ Importar imágenes<input id="files" type="file" multiple accept="image/*,.heic,.heif,.tif,.tiff"></label><div id="selected">Ninguna imagen seleccionada</div>
 </section><section><h2>Movimiento</h2><label>Recorrido<select id="layout"><optgroup label="Cinematic Lab 2.0"><option value="radiant">Radiant · intercaladas</option><option value="helix">Vórtice infinito</option><option value="bubbles">Burbujas</option><option value="slides">Diapositivas ←</option><option value="wave">Onda flotante</option></optgroup><optgroup label="Collage y agua"><option value="collage">Collage · torbellino</option><option value="pool">Rompecabezas · alberca</option></optgroup></select></label><label>Separación<input id="spacing" type="range" min=".9" max="2.5" step=".05" value="1.35"></label><label class="check"><input id="layerEffects" type="checkbox"> Destacar cada imagen con su efecto</label><p class="motion-note" id="motionNote">Las tarjetas alternan cara y canto a lo largo de una diagonal.</p><label>Efecto de esta imagen<select id="effect"></select></label><label>Intensidad<input id="strength" type="range" min="0.2" max="1.5" step="0.05" value="0.75"></label>
 <div class="pair"><button id="random">Aleatorizar todas</button><button id="applyAll">Aplicar efecto a todas</button><button id="remove">Quitar imagen</button></div>
