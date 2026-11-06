@@ -144,6 +144,9 @@ const bubbleTarget = new T.Vector3();
 function usesVerticalThirds() {
   return layout === 'bubbles' && byId('ratio').value === '1080,1920';
 }
+byId('bubbleSize').oninput = event => {
+  byId('bubbleSizeValue').textContent = event.target.value + ' %';
+};
 function updateThirdControl() {
   byId('bubbleThirdControl').hidden = !usesVerticalThirds();
 }
@@ -307,10 +310,15 @@ function drawFrame(time) {
       const depth = Math.max(1, camera.position.length() - T.MathUtils.clamp(focusZ, -.8, 1.3));
       const halfHeight = depth * Math.tan(T.MathUtils.degToRad(camera.fov / 2));
       const center = third === 'top' ? 2 / 3 : third === 'bottom' ? -2 / 3 : 0;
-      focusWidth = Math.min(focusWidth, halfHeight * .58 * Math.min(renderAspect, 1));
+      const fraction = Number(byId('bubbleSize').value) / 100;
+      const maxWidth = Math.min(halfHeight * 1.96 * camera.aspect, halfHeight * 1.88 * renderAspect);
+      const requestedWidth = Math.min(halfHeight * 2 * camera.aspect * fraction, maxWidth);
+      focusWidth = Math.min(requestedWidth * (motion.scale ?? 1), maxWidth);
+      const verticalRoom = Math.max(0, halfHeight * .97 - focusWidth / renderAspect / 2);
+      const horizontalRoom = Math.max(0, halfHeight * .99 * camera.aspect - focusWidth / 2);
       bubbleTarget.set(
-        T.MathUtils.clamp(focusX, -halfHeight * .08, halfHeight * .08),
-        halfHeight * center + T.MathUtils.clamp(motion.y ?? 0, -halfHeight * .025, halfHeight * .025),
+        T.MathUtils.clamp(focusX, -horizontalRoom, horizontalRoom),
+        T.MathUtils.clamp(halfHeight * center + (motion.y ?? 0), -verticalRoom, verticalRoom),
         -depth
       ).applyQuaternion(camera.quaternion).add(camera.position);
       ({ x: focusX, y: focusY, z: focusZ } = bubbleTarget);
@@ -541,7 +549,7 @@ async function addImage(source, name) {
 }
 function lock(value) {
   busy = value;
-  for (const id of ['files','demo','demoSet','ratio','duration','scope','layout','spacing','layerEffects','background','finish','fps','showCaption','bubbleThird',...textControls]) byId(id).disabled = value;
+  for (const id of ['files','demo','demoSet','ratio','duration','scope','layout','spacing','layerEffects','background','finish','fps','showCaption','bubbleThird','bubbleSize',...textControls]) byId(id).disabled = value;
   refresh();
 }
 async function importImages(files) {

@@ -38,7 +38,7 @@ Convierte tus imágenes en recorridos animados en 3D y descarga el resultado en 
 
 ## Exportación
 
-En **Burbujas** con encuadre **9:16**, elige **Posición al desplegar** para encuadrar la tarjeta en el tercio superior, central o inferior. Si la ficha de texto coincide con ese extremo, aparece en el extremo opuesto.
+En **Burbujas** con encuadre **9:16**, elige **Posición al desplegar** para colocar la tarjeta arriba, al centro o abajo. Ajusta **Tamaño al desplegar** del 35 % al 98 % del ancho. Si la tarjeta es grande, puede extenderse al tercio vecino y se desplaza hacia adentro para quedar dentro del cuadro. Si la ficha de texto coincide con ese extremo, aparece en el extremo opuesto.
 
 | Ajuste | Opciones |
 | --- | --- |
