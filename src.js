@@ -78,7 +78,7 @@ let captionKey;
 let captionPixels = 128;
 const textControls = ['font','align','titleSize','detailSize','titleColor','detailColor','captionColor','captionPosition'];
 function updateCaption(card, alpha) {
-  caption.visible = Boolean(card && alpha > .01);
+  caption.visible = Boolean(byId('showCaption').checked && card && alpha > .01);
   if (!caption.visible) return 0;
 
   const settings = textControls.map(id => byId(id).value);
@@ -511,7 +511,7 @@ async function addImage(source, name) {
 }
 function lock(value) {
   busy = value;
-  for (const id of ['files','demo','demoSet','ratio','duration','scope','layout','spacing','layerEffects','background','finish','fps',...textControls]) byId(id).disabled = value;
+  for (const id of ['files','demo','demoSet','ratio','duration','scope','layout','spacing','layerEffects','background','finish','fps','showCaption',...textControls]) byId(id).disabled = value;
   refresh();
 }
 async function importImages(files) {

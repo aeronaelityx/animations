@@ -34,7 +34,7 @@ Convierte tus imágenes en recorridos animados en 3D y descarga el resultado en 
 - **Cámara y profundidad.** En los recorridos de tarjetas puedes elegir entre el efecto habitual, 3D Float y parallax. El parallax por capas usa la imagen base y recortes transparentes aportados por ti. El modo por mapa usa una imagen de profundidad en escala de grises con blanco para lo cercano. El rompecabezas usa su propia puesta en escena.
 - **Código del efecto.** Consulta la función del preset y edita sus fotogramas clave como JSON. Usa entre 2 y 120 puntos ordenados, con `t` de 0 a 1. Puedes ajustar `x`, `y`, `z`, `rx`, `ry`, `rz`, `scale` y `opacity`. **Restaurar preset** vuelve al efecto original.
 - **Escena.** Elige luz suave, color sólido o partículas y ajusta el fondo. La alberca añade su superficie de agua animada.
-- **Texto.** El título admite 52 caracteres y el detalle 400. La ficha reparte el texto en líneas y reduce el tamaño cuando hace falta.
+- **Texto.** Desmarca **Mostrar ficha de texto** para ocultar título, detalle y fondo de la ficha en la vista previa y el WebM. Puedes volver a activarla con el texto que ya escribiste. El título admite 52 caracteres y el detalle 400. La ficha reparte el texto en líneas y reduce el tamaño cuando hace falta.
 
 ## Exportación
 
