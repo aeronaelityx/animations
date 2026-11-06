@@ -14,3 +14,5 @@ details{border-top:1px solid var(--line);padding-top:10px}summary{cursor:pointer
 #stage{height:clamp(340px,69vh,820px)}
 @media(max-width:1100px){main{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-areas:"stage stage" "left right"}}
 @media(max-width:570px){main{grid-template-columns:minmax(0,1fr);grid-template-areas:"stage" "left" "right"}.intro{flex-wrap:wrap}}
+
+[hidden]{display:none!important}#layerInputs input,#depthInput input{max-width:100%}

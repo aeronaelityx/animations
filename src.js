@@ -1,3 +1,4 @@
+import {cameraDefaults,moveCamera,floatMotion,depthGeometry} from './cinematic';
 import * as T from 'three';
 import { gsap } from 'gsap';
 import { effects } from './effects';
@@ -19,6 +20,8 @@ try {
 }
 stage.prepend(renderer.domElement);
 const geometry = new T.PlaneGeometry(1, 1);
+const defaultCamera = {...cameraDefaults};
+const cameraFields = ['fov','distance','radius','targetX','targetY','depth','frequency'];
 const bubbleGeometry = new T.CircleGeometry(.5, 64);
 const particles = new Float32Array(480 * 3);
 for (let i = 0; i < particles.length; i++) particles[i] = (Math.random() - .5) * 26;
@@ -123,7 +126,11 @@ function updateCaption(card, alpha) {
   const width = Math.min(4.6,camera.aspect * 4.9);
   const height = width * 208 / 1024;
   caption.scale.set(width,height,1);
-  caption.position.set(0,(2.69 - height / 2) * (position === "top" ? 1 : -1),0);
+  const planeDistance = 8;
+  const fit = Math.tan(T.MathUtils.degToRad(camera.fov / 2)) / Math.tan(T.MathUtils.degToRad(20));
+  caption.scale.set(width * fit,height * fit,1);
+  caption.position.set(0,(2.69 - height / 2) * (position === "top" ? 1 : -1) * fit,-planeDistance);
+  caption.position.applyQuaternion(camera.quaternion).add(camera.position);
   caption.material.opacity = alpha;
 }
 const cards = [];
@@ -180,17 +187,24 @@ function drawFrame(time) {
   const emphasis = spotlight ? smooth(beat,.12,.32) * (1 - smooth(beat,.73,.94)) : touring ? 0 : view.focus;
   const cursor = touring ? turn + (spotlight ? smooth(beat,.72,1) : beat) : view.cursor;
   const progress = spotlight ? smooth(beat,.2,.93) : view.progress;
-  cards.forEach(({ mesh, aspect, effect, strength }, i) => {
+  const active = cards[featured];
+  moveCamera(camera,active?.cinema ?? defaultCamera,progress,active?.engine !== 'preset' ? emphasis : 0,featured);
+  cards.forEach(({ mesh, aspect, strength, engine, cinema }, i) => {
     const half = cards.length / 2;
     const offset = wrap(i - cursor + half, cards.length) - half;
     const angle = offset * Math.min(1.6, 6.28 / Math.min(cards.length, 7));
     const edge = cards.length === 1 ? 1 : T.MathUtils.smoothstep(half - Math.abs(offset), 0, .48);
     const focus = i === featured ? emphasis : 0;
-    const motion = sampleMotion(cards[i],progress);
+    const card = cards[i];
+    const motion = engine === 'float' ? floatMotion(progress,strength,cinema.frequency,i) : engine === 'preset' ? sampleMotion(card,progress) : {};
+    const immersive = focus > 0 && engine !== 'preset';
+    const layered = immersive && engine === 'layers';
+    const mapped = immersive && engine === 'depth' && card.depthMesh;
+
     const span = camera.aspect * 5.82;
     const step = offset * spacing;
-    const bubble = layout === 'bubbles';
-    mesh.geometry = bubble ? bubbleGeometry : geometry;
+    const bubble = layout === 'bubbles' && !immersive;
+    mesh.geometry = mapped ? card.depthMesh : bubble ? bubbleGeometry : geometry;
     let x = step * Math.min(1.65, span * .4) + Math.sin(angle) * .38;
     let y = step * 1.02 - Math.sin(angle) * .18;
     let z = (Math.cos(angle) - 1) * 1.35;
@@ -243,6 +257,17 @@ function drawFrame(time) {
     const opacity = layout === 'slides' && Math.abs(offset) < .95 ? 1 : edge;
     mesh.material.opacity = i === featured ? mix(opacity, motion.opacity ?? 1, focus) : opacity * (1 - emphasis * (layout === "helix" ? .94 : .58));
     mesh.visible = mesh.material.opacity > .005;
+    if (mapped) mesh.scale.z = cinema.depth * focus;
+    for (const [name, layer] of Object.entries(card.layers)) {
+      layer.visible = Boolean(layered);
+      if (!layer.visible) continue;
+      const depth = (name === 'foreground' ? 1 : .52) * cinema.depth * focus;
+      const size = 1 - depth / Math.max(4,camera.position.z - mesh.position.z);
+      layer.position.copy(mesh.position);
+      layer.position.z += depth + .005;
+      layer.scale.copy(mesh.scale).multiplyScalar(size);
+      layer.material.opacity = mesh.material.opacity * focus;
+    }
   });
   updateCaption(cards[featured], emphasis);
   renderer.render(scene, camera);
@@ -294,6 +319,11 @@ function refresh() {
   byId('empty').hidden = Boolean(card);
   byId('selected').textContent = card ? (selected + 1) + ' / ' + cards.length + ' · ' + card.name : 'Ninguna imagen seleccionada';
   if (card) {
+    byId('engine').value = card.engine;
+    byId('cameraMode').value = card.cinema.mode;
+    cameraFields.forEach(id => { byId(id).value = card.cinema[id]; });
+    byId('layerInputs').hidden = card.engine !== 'layers';
+    byId('depthInput').hidden = card.engine !== 'depth';
     byId('cardTitle').value = card.title;
     byId('cardDetail').value = card.detail;
     byId('effect').value = card.effect;
@@ -311,7 +341,7 @@ function refresh() {
     button.onclick = () => { if (!busy) select(i); };
     return button;
   }));
-  for (const id of ['applyCode','resetCode','motionCode','cardTitle','cardDetail','effect','strength','prev','next','play','orbit','remove','random','applyAll','export','webp']) {
+  for (const id of ['engine','cameraMode','restoreCamera','middle','foreground','depthMap',...cameraFields,'applyCode','resetCode','motionCode','cardTitle','cardDetail','effect','strength','prev','next','play','orbit','remove','random','applyAll','export','webp']) {
     byId(id).disabled = !card || busy;
   }
 }
@@ -367,11 +397,11 @@ async function addImage(source, name) {
   const mesh = new T.Mesh(geometry, new T.MeshBasicMaterial({map:texture, side:T.DoubleSide, transparent:true}));
   scene.add(mesh);
   const available = effects.map((_, i) => i).filter(i => !cards.some(card => card.effect === i));
-  cards.push({name, title:name.replace(/\.[^.]+$/, "").slice(0,52), detail:"", url, mesh, aspect:image.width/image.height, effect:available[Math.floor(Math.random()*available.length)] ?? 0, strength:.75});
+  cards.push({engine:"preset",cinema:{...defaultCamera},layers:{},name, title:name.replace(/\.[^.]+$/, "").slice(0,52), detail:"", url, mesh, aspect:image.width/image.height, effect:available[Math.floor(Math.random()*available.length)] ?? 0, strength:.75});
 }
 function lock(value) {
   busy = value;
-  for (const id of ['files','demo','demoSet','ratio','duration','scope','layout','spacing','layerEffects','background','finish',...textControls]) byId(id).disabled = value;
+  for (const id of ['files','demo','demoSet','ratio','duration','scope','layout','spacing','layerEffects','background','finish','fps',...textControls]) byId(id).disabled = value;
   refresh();
 }
 async function importImages(files) {
@@ -444,6 +474,63 @@ byId('orbit').onclick = () => {
   else startOrbit();
 };
 byId('effect').onchange = e => { cards[selected].effect = Number(e.target.value); delete cards[selected].frames; select(selected); };
+function disposeLayer(layer) {
+  scene.remove(layer);
+  layer.material.map.dispose();
+  layer.material.dispose();
+}
+byId('engine').onchange = e => {
+  const card = cards[selected];
+  card.engine = e.target.value;
+  if (card.engine !== 'preset' && card.cinema.mode === 'fixed') card.cinema.mode = 'orbit';
+  refresh();
+};
+byId('cameraMode').onchange = e => { cards[selected].cinema.mode = e.target.value; };
+cameraFields.forEach(id => {
+  byId(id).onchange = e => {
+    const input = e.target;
+    const value = T.MathUtils.clamp(input.valueAsNumber || (input.value === '0' ? 0 : defaultCamera[id]),Number(input.min),Number(input.max));
+    cards[selected].cinema[id] = value;
+    input.value = value;
+  };
+});
+byId('restoreCamera').onclick = () => { cards[selected].cinema = {...defaultCamera}; refresh(); };
+for (const id of ['middle','foreground','depthMap']) {
+  byId(id).onchange = async e => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    const card = cards[selected];
+    const url = URL.createObjectURL(file);
+    lock(true);
+    try {
+      const image = new Image();
+      image.src = url;
+      await image.decode();
+      if (id === 'depthMap') {
+        const next = depthGeometry(image,1);
+        card.depthMesh?.dispose();
+        card.depthMesh = next;
+      } else {
+        const scale = Math.min(1,2048 / Math.max(image.width,image.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1,Math.round(image.width * scale));
+        canvas.height = Math.max(1,Math.round(image.height * scale));
+        canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);
+        const map = new T.CanvasTexture(canvas);
+        map.colorSpace = T.SRGBColorSpace;
+        const layer = new T.Mesh(geometry,new T.MeshBasicMaterial({map,transparent:true,depthWrite:false}));
+        layer.visible = false;
+        layer.renderOrder = id === 'foreground' ? 3 : 2;
+        if (card.layers[id]) disposeLayer(card.layers[id]);
+        card.layers[id] = layer;
+        scene.add(layer);
+      }
+      status('Recurso de profundidad listo.');
+    } catch (error) { status('No se pudo cargar el recurso. ' + error.message); }
+    finally { URL.revokeObjectURL(url); lock(false); }
+  };
+}
 byId('cardTitle').oninput = e => { cards[selected].title = e.target.value; };
 byId('cardDetail').oninput = e => { cards[selected].detail = e.target.value; };
 byId('strength').oninput = e => { cards[selected].strength = Number(e.target.value); };
@@ -467,6 +554,8 @@ byId('layerEffects').onchange = e => { layerEffects = e.target.checked; };
 byId('remove').onclick = () => {
   const [card] = cards.splice(selected, 1);
   scene.remove(card.mesh);
+  card.depthMesh?.dispose();
+  for (const layer of Object.values(card.layers)) disposeLayer(layer);
   card.mesh.material.map.dispose();
   card.mesh.material.dispose();
   URL.revokeObjectURL(card.url);
@@ -535,7 +624,7 @@ byId('export').onclick = async () => {
     tour.position = 0;
     recordingTour = helix;
     drawFrame(performance.now());
-    stream = canvas.captureStream(30);
+    stream = canvas.captureStream(Number(byId('fps').value));
     recorder = new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:8_000_000});
     const chunks = [];
     const result = new Promise((resolve,reject) => {
