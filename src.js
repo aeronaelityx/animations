@@ -29,6 +29,8 @@ const view = { cursor: 0, focus: 0, progress: 0 };
 let selected = 0;
 let busy = false;
 let animation;
+let spinning = false;
+let lastFrame;
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
 const ray = new T.Raycaster();
 
@@ -48,23 +50,43 @@ new ResizeObserver(() => { if (!busy) resize(); }).observe(stage);
 byId('ratio').onchange = () => resize();
 
 const mix = T.MathUtils.lerp;
-renderer.setAnimationLoop(() => {
+function wrap(value, length) {
+  return T.MathUtils.euclideanModulo(value, length);
+}
+function setSpinning(value) {
+  spinning = value;
+  byId('orbit').textContent = value ? 'Pausar hélice' : 'Girar hélice';
+  byId('orbit').setAttribute('aria-pressed', String(value));
+}
+renderer.setAnimationLoop(time => {
+  const delta = Math.min(.05, (time - (lastFrame ?? time)) / 1000);
+  lastFrame = time;
+  if (spinning && !busy && cards.length > 1) {
+    view.cursor = wrap(view.cursor + delta / duration(), cards.length);
+  }
   cards.forEach(({ mesh, aspect, effect, strength }, i) => {
-    const offset = i - view.cursor;
-    const angle = offset * .92;
+    const half = cards.length / 2;
+    const offset = wrap(i - view.cursor + half, cards.length) - half;
+    const angle = offset * Math.min(1.6, 6.28 / Math.min(cards.length, 7));
+    const edge = cards.length === 1 ? 1 : T.MathUtils.smoothstep(half - Math.abs(offset), 0, .48);
     const focus = i === selected ? view.focus : 0;
     const motion = effects[effect][1](view.progress, strength);
-    const galleryWidth = Math.min(2.55, camera.aspect * 3.25);
+    const galleryWidth = Math.min(3.25, camera.aspect * 4.05);
     const focusWidth = Math.min(4.65 * camera.aspect, 4.5 * aspect) * (motion.scale ?? 1);
     const width = mix(Math.min(galleryWidth, 2.3 * aspect), focusWidth, focus);
     mesh.scale.set(width, width / aspect, 1);
     mesh.position.set(
-      mix(Math.sin(angle) * Math.min(2.9, camera.aspect * 4), motion.x ?? 0, focus),
-      mix(offset * .72, motion.y ?? 0, focus),
+      mix(offset * Math.min(1.05, camera.aspect * 1.55) + Math.sin(angle) * .56, motion.x ?? 0, focus),
+      mix(offset * .8 - Math.sin(angle) * .22, motion.y ?? 0, focus),
       mix((Math.cos(angle) - 1) * 2.2, (motion.z ?? 0) + .6, focus)
     );
-    mesh.rotation.set(focus * (motion.rx ?? 0), mix(-Math.sin(angle) * .8, motion.ry ?? 0, focus), focus * (motion.rz ?? 0));
-    mesh.material.opacity = i === selected ? mix(1, motion.opacity ?? 1, focus) : 1 - view.focus * .8;
+    mesh.rotation.set(
+      mix(-.19, motion.rx ?? 0, focus),
+      mix(Math.sin(angle) * .88 - .24, motion.ry ?? 0, focus),
+      mix(.25, motion.rz ?? 0, focus)
+    );
+    mesh.material.opacity = i === selected ? mix(edge, motion.opacity ?? 1, focus) : edge * (1 - view.focus * .8);
+    mesh.visible = mesh.material.opacity > .005;
   });
   renderer.render(scene, camera);
 });
@@ -97,8 +119,11 @@ function refresh() {
 function select(index, focus = true) {
   if (!cards.length) return;
   animation?.kill();
-  selected = (index + cards.length) % cards.length;
-  animation = gsap.to(view, { cursor:selected, focus: Number(focus), progress:0, duration:reduceMotion.matches ? 0 : .65, ease:'power3.out' });
+  setSpinning(false);
+  selected = wrap(index, cards.length);
+  const half = cards.length / 2;
+  const cursor = view.cursor + wrap(selected - view.cursor + half, cards.length) - half;
+  animation = gsap.to(view, { cursor, focus: Number(focus), progress:0, duration:reduceMotion.matches ? 0 : .65, ease:'power3.out' });
   refresh();
 }
 function randomize() {
@@ -168,7 +193,8 @@ async function importImages(files) {
     }
   } finally {
     lock(false);
-    select(selected, false);
+    if (cards.length && !reduceMotion.matches) startOrbit();
+    else select(selected, false);
     status([batch.length - failures.length + ' importadas', files.length > batch.length ? 'Máximo 20 tarjetas' : '', failures.length ? 'Fallaron ' + failures.join(', ') : ''].filter(Boolean).join(' · '));
   }
 }
@@ -191,7 +217,15 @@ byId('demo').onclick = () => {
 };
 byId('prev').onclick = () => select(selected - 1, false);
 byId('next').onclick = () => select(selected + 1, false);
-byId('orbit').onclick = () => select(selected, false);
+function startOrbit() {
+  animation?.kill();
+  Object.assign(view, {focus:0, progress:0});
+  setSpinning(true);
+}
+byId('orbit').onclick = () => {
+  if (spinning) setSpinning(false);
+  else startOrbit();
+};
 byId('effect').onchange = e => { cards[selected].effect = Number(e.target.value); select(selected); };
 byId('strength').oninput = e => { cards[selected].strength = Number(e.target.value); };
 byId('random').onclick = randomize;
@@ -210,7 +244,7 @@ stage.addEventListener('wheel', e => {
   e.preventDefault();
   if (performance.now() - lastWheel < 230) return;
   lastWheel = performance.now();
-  select(selected + Math.sign(e.deltaY), false);
+  select(Math.round(view.cursor) + Math.sign(e.deltaY), false);
 }, {passive:false});
 let lastWheel = -Infinity;
 let startX = null;
@@ -221,10 +255,10 @@ canvas.onpointerup = e => {
   if (busy || startX === null) return;
   const delta = e.clientX - startX;
   startX = null;
-  if (Math.abs(delta) > 20) { select(selected - Math.sign(delta), false); return; }
+  if (Math.abs(delta) > 20) { select(Math.round(view.cursor) - Math.sign(delta), false); return; }
   const bounds = canvas.getBoundingClientRect();
   ray.setFromCamera(new T.Vector2((e.clientX-bounds.left)/bounds.width*2-1, 1-(e.clientY-bounds.top)/bounds.height*2), camera);
-  const hit = ray.intersectObjects(cards.map(card => card.mesh))[0];
+  const hit = ray.intersectObjects(cards.map(card => card.mesh).filter(mesh => mesh.visible))[0];
   if (hit) select(cards.findIndex(card => card.mesh === hit.object));
 };
 function duration() { return Math.max(1, Math.min(12, Number(byId('duration').value) || 3)); }
@@ -235,6 +269,7 @@ function clip(timeline, index, seconds) {
   timeline.to(view, {progress:1, duration:seconds-transition, ease:'none'});
 }
 byId('play').onclick = () => {
+  setSpinning(false);
   animation?.kill();
   animation = gsap.timeline();
   clip(animation, selected, duration());
@@ -250,6 +285,9 @@ byId('export').onclick = async () => {
   const mime = ['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'].find(type => window.MediaRecorder?.isTypeSupported(type));
   if (!mime || !canvas.captureStream) { status('Este navegador no graba WebM. Prueba Chrome o Edge.'); return; }
   const previous = selected;
+  const wasSpinning = spinning;
+  const helix = byId('scope').value === 'helix';
+  if (helix && cards.length < 2) { status('Importa al menos dos imágenes para exportar la hélice.'); return; }
   const indices = byId('scope').value === 'one' ? [selected] : cards.map((_, i) => i);
   const seconds = duration();
   lock(true);
@@ -273,7 +311,8 @@ byId('export').onclick = async () => {
       onUpdate:() => status('Grabando WebM · ' + Math.round(animation.progress()*100) + '%'),
       onComplete:() => { if (recorder.state !== 'inactive') recorder.stop(); }
     });
-    indices.forEach(index => clip(animation,index,seconds));
+    if (helix) animation.to(view, {cursor:indices.length, duration:seconds * indices.length, ease:'none'});
+    else indices.forEach(index => clip(animation,index,seconds));
     const blob = await result;
     if (!blob.size) throw new Error('El video salió vacío.');
     const url = URL.createObjectURL(blob);
@@ -288,7 +327,8 @@ byId('export').onclick = async () => {
     stream?.getTracks().forEach(track => track.stop());
     resize();
     lock(false);
-    select(previous,false);
+    if (wasSpinning) { selected = previous; refresh(); startOrbit(); }
+    else select(previous,false);
   }
 };
 refresh();

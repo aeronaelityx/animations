@@ -3,12 +3,12 @@
 <body><header><span class="logo">A✦</span><strong>AELITYX</strong><span class="divider"></span><span>Motion Studio</span><span class="local">Procesamiento local</span></header>
 <main><section class="workspace"><div class="intro"><div><h1>Galería orbital</h1><p>Convierte tus imágenes en una secuencia de movimiento.</p></div><button id="demo">Cargar demo</button></div>
 <div id="stage"><div id="empty"><strong>Tu espiral empieza aquí</strong><p>Arrastra imágenes al escenario o impórtalas.</p></div></div>
-<nav aria-label="Escenario"><button id="prev" aria-label="Anterior">←</button><button id="next" aria-label="Siguiente">→</button><button id="orbit">Ver hélice</button><button id="play">Previsualizar efecto</button></nav>
+<nav aria-label="Escenario"><button id="prev" aria-label="Anterior">←</button><button id="next" aria-label="Siguiente">→</button><button id="orbit" aria-pressed="false">Girar hélice</button><button id="play">Previsualizar efecto</button></nav>
 <div id="film" aria-label="Imágenes"></div></section>
 <aside><h2>Edición</h2><label class="import">+ Importar imágenes<input id="files" type="file" multiple accept="image/*,.heic,.heif,.tif,.tiff"></label><div id="selected">Ninguna imagen seleccionada</div>
 <label>Efecto<select id="effect"></select></label><label>Intensidad<input id="strength" type="range" min="0.2" max="1.5" step="0.05" value="0.75"></label>
 <div class="pair"><button id="random">Aleatorizar</button><button id="remove">Quitar imagen</button></div>
 <h2>Exportación</h2><label>Encuadre<select id="ratio"><option value="1024,1024">1:1 · 1024 × 1024</option><option value="1080,1920">9:16 · 1080 × 1920</option><option value="1920,1080">16:9 · 1920 × 1080</option></select></label>
-<label>Segundos por imagen<input id="duration" type="number" min="1" max="12" value="3"></label><label>Contenido<select id="scope"><option value="all">Secuencia completa</option><option value="one">Imagen seleccionada</option></select></label>
+<label>Segundos por imagen<input id="duration" type="number" min="1" max="12" value="3"></label><label>Contenido<select id="scope"><option value="helix">Hélice continua</option><option value="all">Secuencia con efectos</option><option value="one">Imagen seleccionada</option></select></label>
 <button class="primary" id="export">Descargar WebM</button><button id="webp">Descargar WebP de la tarjeta</button><p id="status" role="status"></p></aside></main>
 <script type="module" src="/src.js"></script></body></html>
