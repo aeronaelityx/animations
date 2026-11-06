@@ -8,6 +8,7 @@
   "dependencies": {
     "gsap": "3.12.7",
     "heic-to": "1.4.2",
+    "mediabunny": "1.42.0",
     "three": "0.170.0"
   },
   "devDependencies": {

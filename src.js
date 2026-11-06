@@ -2,13 +2,14 @@ import {cameraDefaults,moveCamera,floatMotion,depthGeometry} from './cinematic';
 import * as T from 'three';
 import { gsap } from 'gsap';
 import { effects } from './effects';
+import { createCardSurface, createUnfoldGeometry, ribbonPose, unfoldPose } from './gallery';
+import { materiaDemo } from './materia';
 import './style.css';
 
 const byId = id => document.getElementById(id);
 const stage = byId('stage');
 const status = message => { byId('status').textContent = message; };
 const scene = new T.Scene();
-scene.background = new T.Color('#171423');
 const camera = new T.PerspectiveCamera(40, 1, .1, 100);
 camera.position.z = 8;
 let renderer;
@@ -22,7 +23,7 @@ stage.prepend(renderer.domElement);
 const geometry = new T.PlaneGeometry(1, 1);
 const defaultCamera = {...cameraDefaults};
 const cameraFields = ['fov','distance','radius','targetX','targetY','depth','frequency'];
-const bubbleGeometry = new T.CircleGeometry(.5, 64);
+const unfoldGeometry = createUnfoldGeometry();
 const particles = new Float32Array(480 * 3);
 for (let i = 0; i < particles.length; i++) particles[i] = (Math.random() - .5) * 26;
 const dust = new T.BufferGeometry();
@@ -44,12 +45,17 @@ function updateBackground() {
   const ctx = backdrop.getContext('2d');
   ctx.fillStyle = color;
   ctx.fillRect(0,0,256,256);
-  const light = ctx.createRadialGradient(128,108,5,128,108,182);
-  light.addColorStop(0, finish === 'studio' ? '#ffffff26' : '#7469db44');
-  light.addColorStop(.52,'#ffffff00');
-  light.addColorStop(1,'#00000088');
+  const light = ctx.createRadialGradient(169, 86, 0, 169, 86, 172);
+  const tint = finish === 'studio' ? '157,131,220' : '116,105,219';
+  light.addColorStop(0, 'rgba(' + tint + ',.25)');
+  light.addColorStop(1, 'rgba(' + tint + ',0)');
   ctx.fillStyle = light;
-  ctx.fillRect(0,0,256,256);
+  ctx.fillRect(0, 0, 256, 256);
+  const falloff = ctx.createRadialGradient(130, 116, 68, 130, 116, 191);
+  falloff.addColorStop(0, 'rgba(0,0,0,0)');
+  falloff.addColorStop(1, 'rgba(0,0,0,.6)');
+  ctx.fillStyle = falloff;
+  ctx.fillRect(0, 0, 256, 256);
   backdropMap.needsUpdate = true;
   scene.background = backdropMap;
 }
@@ -125,7 +131,6 @@ function updateCaption(card, alpha) {
   }
   const width = Math.min(4.6,camera.aspect * 4.9);
   const height = width * 208 / 1024;
-  caption.scale.set(width,height,1);
   const planeDistance = 8;
   const fit = Math.tan(T.MathUtils.degToRad(camera.fov / 2)) / Math.tan(T.MathUtils.degToRad(20));
   caption.scale.set(width * fit,height * fit,1);
@@ -139,10 +144,13 @@ let selected = 0;
 let busy = false;
 let animation;
 let spinning = false;
+let tourPaused = false;
 let lastFrame;
-let layout = 'helix';
+let layout = byId('layout').value;
+const flowLayouts = new Set(['radiant', 'bubbles']);
 let spacing = 1.35;
-let layerEffects = true;
+const spotlightPreference = new Map();
+let layerEffects = byId("layerEffects").checked;
 let recordingTour = false;
 const tour = {position:0};
 const smooth = (value,min,max) => T.MathUtils.smoothstep(value,min,max);
@@ -173,38 +181,61 @@ function setSpinning(value) {
   byId('orbit').textContent = value ? 'Pausar recorrido' : 'Reproducir recorrido';
   byId('orbit').setAttribute('aria-pressed', String(value));
 }
+function tourCursor(position, featuredTour = layerEffects) {
+  if (!featuredTour) return position;
+  if (flowLayouts.has(layout)) return position - .5;
+  const turn = Math.floor(position);
+  return turn + smooth(position - turn, .72, 1);
+}
+function tourAvailable() {
+  return cards.length > 1 || (cards.length === 1 && layout === 'bubbles' && layerEffects);
+}
+function currentCardIndex() {
+  return spinning ? Math.round(tourCursor(tour.position)) : selected;
+}
 function drawFrame(time) {
-  const delta = Math.min(.05, (time - (lastFrame ?? time)) / 1000);
+  const delta = T.MathUtils.clamp((time - (lastFrame ?? time)) / 1000, 0, .05);
   lastFrame = time;
-  if (spinning && !busy && cards.length > 1) {
+  if (spinning && !busy && tourAvailable()) {
     tour.position = wrap(tour.position + delta / duration(), cards.length);
   }
-  const touring = (spinning && !busy || recordingTour) && cards.length > 1;
+  const touring = (spinning && !busy || recordingTour) && tourAvailable();
   const turn = Math.floor(tour.position);
   const beat = tour.position - turn;
   const spotlight = touring && layerEffects;
   const featured = spotlight ? wrap(turn,cards.length) : selected;
   const emphasis = spotlight ? smooth(beat,.12,.32) * (1 - smooth(beat,.73,.94)) : touring ? 0 : view.focus;
-  const cursor = touring ? turn + (spotlight ? smooth(beat,.72,1) : beat) : view.cursor;
+  const cursor = touring ? tourCursor(tour.position) : view.cursor;
   const progress = spotlight ? smooth(beat,.2,.93) : view.progress;
   const active = cards[featured];
   moveCamera(camera,active?.cinema ?? defaultCamera,progress,active?.engine !== 'preset' ? emphasis : 0,featured);
-  cards.forEach(({ mesh, aspect, strength, engine, cinema }, i) => {
+  const captionY = byId("captionPosition").value === "top" ? -.44 : .44;
+  cards.forEach((card, i) => {
+    const { mesh, surface, aspect, strength, engine, cinema } = card;
     const half = cards.length / 2;
-    const offset = wrap(i - cursor + half, cards.length) - half;
+    const offset = cards.length === 1 ? 0 : wrap(i - cursor + half, cards.length) - half;
     const angle = offset * Math.min(1.6, 6.28 / Math.min(cards.length, 7));
     const edge = cards.length === 1 ? 1 : T.MathUtils.smoothstep(half - Math.abs(offset), 0, .48);
     const focus = i === featured ? emphasis : 0;
-    const card = cards[i];
     const motion = engine === 'float' ? floatMotion(progress,strength,cinema.frequency,i) : engine === 'preset' ? sampleMotion(card,progress) : {};
     const immersive = focus > 0 && engine !== 'preset';
     const layered = immersive && engine === 'layers';
-    const mapped = immersive && engine === 'depth' && card.depthMesh;
+    const bubble = layout === 'bubbles';
+    const radiant = layout === 'radiant';
+    const { orb, curl } = bubble ? unfoldPose(focus) : { orb: 0, curl: 0 };
+    const parallax = engine === 'depth' || engine === 'layers';
+    const mapped = immersive && engine === 'depth' && card.depthMesh && (!bubble || orb === 0);
+    const renderAspect = bubble ? (parallax ? mix(1, aspect, 1 - orb) : 1) : aspect;
+    mesh.geometry = mapped ? card.depthMesh : unfoldGeometry;
+    mesh.morphTargetInfluences[0] = orb;
+    mesh.morphTargetInfluences[1] = curl;
+    surface.cardOrb.value = orb;
+    surface.cardRound.value = Number(radiant || bubble);
+    surface.cardAspect.value = renderAspect;
+    surface.cardMatte.value = Number(bubble && !parallax);
 
     const span = camera.aspect * 5.82;
     const step = offset * spacing;
-    const bubble = layout === 'bubbles' && !immersive;
-    mesh.geometry = mapped ? card.depthMesh : bubble ? bubbleGeometry : geometry;
     let x = step * Math.min(1.65, span * .4) + Math.sin(angle) * .38;
     let y = step * 1.02 - Math.sin(angle) * .18;
     let z = (Math.cos(angle) - 1) * 1.35;
@@ -212,7 +243,11 @@ function drawFrame(time) {
     let ry = Math.sin(angle) * .88 - .24;
     let rz = .25;
     let galleryWidth = Math.min(2.5, span * .51, 2.25 * aspect);
-    if (layout === 'helix') {
+    if (radiant) {
+      const pose = ribbonPose(offset, spacing, camera.aspect, aspect);
+      ({ x, y, z, rx, ry, rz } = pose);
+      galleryWidth = pose.width;
+    } else if (layout === 'helix') {
       const depth = offset + half;
       const radius = Math.exp(-depth * .32 / spacing);
       const theta = offset * 2.4 + cursor * (Math.PI * 2 / cards.length);
@@ -228,11 +263,13 @@ function drawFrame(time) {
       y = z = rx = ry = rz = 0;
       galleryWidth = Math.min(span * .94, 5.35 * aspect);
     } else if (layout === 'bubbles') {
-      x = step * span * .34;
-      y = Math.sin(offset * 1.55 + i * .8) * .94;
-      z = Math.cos(offset * 1.35) * .64;
-      rx = ry = rz = 0;
-      galleryWidth = Math.min(2.15, span * .39) * (1 + Math.cos(i * 2.1) * .18);
+      x = step * span * .275;
+      y = Math.sin(offset * 1.48 + i * .82) * 1.12 - .08;
+      z = Math.cos(offset * 1.31) * .53 - Math.abs(offset) * .24;
+      rx = -.09;
+      ry = Math.sin(offset * .9) * .18;
+      rz = Math.sin(offset * 1.12 + i * .5) * .11;
+      galleryWidth = Math.min(2.05, span * .37) * (1 + Math.cos(i * 2.1) * .12);
     } else if (layout === 'wave') {
       x = step * span * .34;
       y = Math.sin(step * 1.13) * 1.03;
@@ -241,12 +278,12 @@ function drawFrame(time) {
       ry = Math.sin(step) * .42;
       rz = Math.cos(step) * .13;
     }
-    const focusWidth = Math.min(camera.aspect * 4.1, bubble ? 3.25 : 3.62 * aspect) * (motion.scale ?? 1);
+    const focusWidth = Math.min(camera.aspect * 4.25, 3.62 * renderAspect) * (motion.scale ?? 1);
     const width = mix(galleryWidth, focusWidth, focus);
-    mesh.scale.set(width, bubble ? width : width / aspect, 1);
+    mesh.scale.set(width, width / renderAspect, 1);
     mesh.position.set(
       mix(x, motion.x ?? 0, focus),
-      mix(y, (byId("captionPosition").value === "top" ? -.45 : .45) + (motion.y ?? 0), focus),
+      mix(y, captionY + (motion.y ?? 0), focus),
       mix(z, (motion.z ?? 0) + .42, focus)
     );
     mesh.rotation.set(
@@ -254,10 +291,13 @@ function drawFrame(time) {
       mix(ry, motion.ry ?? 0, focus),
       mix(rz, motion.rz ?? 0, focus)
     );
-    const opacity = layout === 'slides' && Math.abs(offset) < .95 ? 1 : edge;
-    mesh.material.opacity = i === featured ? mix(opacity, motion.opacity ?? 1, focus) : opacity * (1 - emphasis * (layout === "helix" ? .94 : .58));
+    surface.cardSheen.value = .66 + mesh.rotation.y * .18;
+    const ribbonFade = radiant ? 1 - .38 * smooth(Math.abs(offset), 1.2, 3.25) : 1;
+    const opacity = (layout === 'slides' && Math.abs(offset) < .95 ? 1 : edge) * ribbonFade;
+    mesh.renderOrder = focus > .01 ? 1 : 0;
+    mesh.material.opacity = i === featured ? mix(opacity, motion.opacity ?? 1, focus) : opacity * (1 - emphasis * (layout === "helix" ? .94 : .72));
     mesh.visible = mesh.material.opacity > .005;
-    if (mapped) mesh.scale.z = cinema.depth * focus;
+    if (mapped) mesh.scale.z = cinema.depth * focus * (bubble ? smooth(focus, .91, 1) : 1);
     for (const [name, layer] of Object.entries(card.layers)) {
       layer.visible = Boolean(layered);
       if (!layer.visible) continue;
@@ -266,10 +306,10 @@ function drawFrame(time) {
       layer.position.copy(mesh.position);
       layer.position.z += depth + .005;
       layer.scale.copy(mesh.scale).multiplyScalar(size);
-      layer.material.opacity = mesh.material.opacity * focus;
+      layer.material.opacity = mesh.material.opacity * (bubble ? smooth(focus, .91, 1) : focus);
     }
   });
-  updateCaption(cards[featured], emphasis);
+  updateCaption(active, layout === "bubbles" ? smooth(emphasis, .57, .93) : emphasis);
   renderer.render(scene, camera);
 }
 renderer.setAnimationLoop(drawFrame);
@@ -348,8 +388,9 @@ function refresh() {
 function select(index, focus = true) {
   if (!cards.length) return;
   animation?.kill();
-  if (spinning) view.cursor = tour.position;
+  if (spinning) view.cursor = tourCursor(tour.position);
   setSpinning(false);
+  tourPaused = false;
   selected = wrap(index, cards.length);
   const half = cards.length / 2;
   const cursor = view.cursor + wrap(selected - view.cursor + half, cards.length) - half;
@@ -394,10 +435,12 @@ async function addImage(source, name) {
   const texture = new T.Texture(image);
   texture.colorSpace = T.SRGBColorSpace;
   texture.needsUpdate = true;
-  const mesh = new T.Mesh(geometry, new T.MeshBasicMaterial({map:texture, side:T.DoubleSide, transparent:true}));
+  const aspect = image.width / image.height;
+  const { material, uniforms: surface } = createCardSurface(texture, aspect);
+  const mesh = new T.Mesh(unfoldGeometry, material);
   scene.add(mesh);
   const available = effects.map((_, i) => i).filter(i => !cards.some(card => card.effect === i));
-  cards.push({engine:"preset",cinema:{...defaultCamera},layers:{},name, title:name.replace(/\.[^.]+$/, "").slice(0,52), detail:"", url, mesh, aspect:image.width/image.height, effect:available[Math.floor(Math.random()*available.length)] ?? 0, strength:.75});
+  cards.push({engine:"preset",cinema:{...defaultCamera},layers:{},name, title:name.replace(/\.[^.]+$/, "").slice(0,52), detail:"", url, mesh, surface, aspect, effect:available[Math.floor(Math.random()*available.length)] ?? 0, strength:.75});
 }
 function lock(value) {
   busy = value;
@@ -438,6 +481,10 @@ stage.ondragleave = () => stage.classList.remove('drag');
 stage.ondrop = e => { e.preventDefault(); stage.classList.remove('drag'); void importImages(e.dataTransfer.files); };
 byId('demo').onclick = () => {
   const set = byId('demoSet').value;
+  if (set === 'materia') {
+    void importImages(materiaDemo());
+    return;
+  }
   const names = {
     orbital:['Ópalo','Umbral','Marea','Ascua','Niebla','Prisma'],
     terrain:['Duna','Aurora','Sierra','Cañón','Isla','Cordillera','Estuario','Cumbre'],
@@ -461,17 +508,28 @@ byId('demo').onclick = () => {
   });
   void importImages(files);
 };
-byId('prev').onclick = () => select(selected - 1, false);
-byId('next').onclick = () => select(selected + 1, false);
-function startOrbit() {
+byId('prev').onclick = () => select(currentCardIndex() - 1, false);
+byId('next').onclick = () => select(currentCardIndex() + 1, false);
+function startOrbit(resume = false) {
   animation?.kill();
   Object.assign(view, {focus:0, progress:0});
-  tour.position = wrap(Math.round(view.cursor), cards.length || 1);
+  if (!resume) tour.position = wrap(Math.round(view.cursor), cards.length || 1);
+  tourPaused = false;
   setSpinning(true);
 }
 byId('orbit').onclick = () => {
-  if (spinning) { view.cursor = tour.position; setSpinning(false); }
-  else startOrbit();
+  if (spinning) {
+    view.cursor = tourCursor(tour.position);
+    if (layerEffects && tourAvailable()) {
+      selected = wrap(Math.floor(tour.position), cards.length);
+      const beat = tour.position % 1;
+      view.focus = smooth(beat,.12,.32) * (1 - smooth(beat,.73,.94));
+      view.progress = smooth(beat,.2,.93);
+      refresh();
+    }
+    tourPaused = true;
+    setSpinning(false);
+  } else startOrbit(tourPaused);
 };
 byId('effect').onchange = e => { cards[selected].effect = Number(e.target.value); delete cards[selected].frames; select(selected); };
 function disposeLayer(layer) {
@@ -545,12 +603,25 @@ byId('applyAll').onclick = () => {
   status('Efecto aplicado a todas las imágenes.');
 };
 byId('layout').onchange = e => {
+  if (spinning) view.cursor = tourCursor(tour.position);
   layout = e.target.value;
+  layerEffects = spotlightPreference.get(layout) ?? layout !== 'radiant';
+  byId('layerEffects').checked = layerEffects;
+  byId('motionNote').textContent = {
+    radiant: 'Las tarjetas alternan cara y canto a lo largo de una diagonal.',
+    bubbles: 'Cada esfera se despliega, muestra su ficha y vuelve a cerrarse.',
+    helix: 'Las tarjetas giran hacia un punto de fuga.',
+    slides: 'Las imágenes avanzan de derecha a izquierda.',
+    wave: 'Las imágenes suben y bajan a medida que avanzan.'
+  }[layout];
   if (reduceMotion.matches) select(selected, false);
   else if (cards.length) startOrbit();
 };
 byId('spacing').oninput = e => { spacing = Number(e.target.value); };
-byId('layerEffects').onchange = e => { layerEffects = e.target.checked; };
+byId('layerEffects').onchange = e => {
+  layerEffects = e.target.checked;
+  spotlightPreference.set(layout, layerEffects);
+};
 byId('remove').onclick = () => {
   const [card] = cards.splice(selected, 1);
   scene.remove(card.mesh);
@@ -568,7 +639,7 @@ stage.addEventListener('wheel', e => {
   e.preventDefault();
   if (performance.now() - lastWheel < 230) return;
   lastWheel = performance.now();
-  select(Math.round(view.cursor) + Math.sign(e.deltaY), false);
+  select(Math.round(spinning ? tourCursor(tour.position) : view.cursor) + Math.sign(e.deltaY), false);
 }, {passive:false});
 let lastWheel = -Infinity;
 let startX = null;
@@ -579,7 +650,7 @@ canvas.onpointerup = e => {
   if (busy || startX === null) return;
   const delta = e.clientX - startX;
   startX = null;
-  if (Math.abs(delta) > 20) { select(Math.round(view.cursor) - Math.sign(delta), false); return; }
+  if (Math.abs(delta) > 20) { select(Math.round(spinning ? tourCursor(tour.position) : view.cursor) - Math.sign(delta), false); return; }
   const bounds = canvas.getBoundingClientRect();
   ray.setFromCamera(new T.Vector2((e.clientX-bounds.left)/bounds.width*2-1, 1-(e.clientY-bounds.top)/bounds.height*2), camera);
   const hit = ray.intersectObjects(cards.map(card => card.mesh).filter(mesh => mesh.visible))[0];
@@ -590,10 +661,18 @@ function clip(timeline, index, seconds) {
   const transition = Math.min(.42, seconds * .28);
   timeline.set(view, {focus:0, progress:0, onComplete:() => { selected = index; }});
   timeline.to(view, {cursor:index, focus:1, duration:transition, ease:'power2.inOut'});
-  timeline.to(view, {progress:1, duration:seconds-transition, ease:'none'});
+  const exit = layout === 'bubbles' ? Math.min(.58, seconds * .25) : 0;
+  const settle = exit ? Math.min(.14, seconds * .10) : 0;
+  timeline.to(view, {progress:1, duration:seconds-transition-exit-settle, ease:'none'});
+  if (exit) {
+    timeline.to(view, {focus:0, duration:exit, ease:'power2.inOut'});
+    timeline.to(view, {focus:0, duration:settle});
+  }
 }
 byId('play').onclick = () => {
+  if (spinning) view.cursor = tourCursor(tour.position);
   setSpinning(false);
+  tourPaused = false;
   animation?.kill();
   animation = gsap.timeline();
   clip(animation, selected, duration());
@@ -606,58 +685,71 @@ function download(url, name) {
 }
 byId('webp').onclick = () => download(cards[selected].url, cards[selected].name.replace(/\.[^.]+$/, '') + '.webp');
 byId('export').onclick = async () => {
-  const mime = ['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'].find(type => window.MediaRecorder?.isTypeSupported(type));
-  if (!mime || !canvas.captureStream) { status('Este navegador no graba WebM. Prueba Chrome o Edge.'); return; }
   const previous = selected;
   const wasSpinning = spinning;
-  const helix = byId('scope').value === 'helix';
-  if (helix && cards.length < 2) { status('Importa al menos dos imágenes para exportar el recorrido.'); return; }
-  const indices = byId('scope').value === 'one' ? [selected] : cards.map((_, i) => i);
+  const previousView = {...view};
+  const previousTourPosition = tour.position;
+  const scope = byId('scope').value;
+  const continuous = scope === 'helix';
+  if (continuous && !tourAvailable()) {
+    status('Importa al menos dos imágenes para exportar el recorrido.');
+    return;
+  }
+
+  const indices = scope === 'one' ? [selected] : cards.map((_, i) => i);
   const seconds = duration();
+  const fps = Number(byId('fps').value);
   lock(true);
   animation?.kill();
-  let stream;
-  let recorder;
+  renderer.setAnimationLoop(null);
+  status('Preparando WebM…');
+
   try {
+    const { exportWebM } = await import('./webm');
     resize(true);
-    Object.assign(view, {cursor:indices[0],focus:0,progress:0});
-    tour.position = 0;
-    recordingTour = helix;
-    drawFrame(performance.now());
-    stream = canvas.captureStream(Number(byId('fps').value));
-    recorder = new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:8_000_000});
-    const chunks = [];
-    const result = new Promise((resolve,reject) => {
-      recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
-      recorder.onstop = () => resolve(new Blob(chunks,{type:'video/webm'}));
-      recorder.onerror = e => reject(e.error ?? new Error('Falló la grabación.'));
-    });
-    recorder.start();
-    animation = gsap.timeline({
-      onUpdate:() => status('Grabando WebM · ' + Math.round(animation.progress()*100) + '%'),
-      onComplete:() => { if (recorder.state !== 'inactive') recorder.stop(); }
-    });
-    if (helix) {
-      animation.to(tour, {position:indices.length,duration:seconds * indices.length,ease:'none'});
+    selected = indices[0];
+    Object.assign(view, {cursor:selected, focus:0, progress:0});
+    recordingTour = continuous;
+    animation = gsap.timeline({paused:true});
+    if (continuous) {
+      tour.position = 0;
+      animation.to(tour, {position:indices.length, duration:seconds * indices.length, ease:'none'});
+    } else {
+      indices.forEach(index => clip(animation, index, seconds));
     }
-    else indices.forEach(index => clip(animation,index,seconds));
-    const blob = await result;
+
+    let lastPercent = -1;
+    const blob = await exportWebM(canvas, {
+      fps,
+      seconds: animation.duration(),
+      render(time) {
+        animation.time(time, false);
+        drawFrame(performance.now());
+      },
+      report(progress, action) {
+        const percent = Math.round(progress * 100);
+        if (percent === lastPercent) return;
+        lastPercent = percent;
+        status(action + ' WebM · ' + percent + '%');
+      }
+    });
     if (!blob.size) throw new Error('El video salió vacío.');
     const url = URL.createObjectURL(blob);
-    download(url,'aelityx-motion.webm');
-    setTimeout(() => URL.revokeObjectURL(url),60_000);
+    download(url, 'aelityx-motion.webm');
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
     status('WebM listo.');
   } catch (error) {
     status(error.message);
   } finally {
     recordingTour = false;
     animation?.kill();
-    if (recorder && recorder.state !== 'inactive') recorder.stop();
-    stream?.getTracks().forEach(track => track.stop());
+    selected = previous;
+    Object.assign(view, previousView);
+    tour.position = previousTourPosition;
     resize();
     lock(false);
-    if (wasSpinning) { selected = previous; refresh(); startOrbit(); }
-    else select(previous,false);
+    if (wasSpinning) startOrbit(true);
+    renderer.setAnimationLoop(drawFrame);
   }
 };
 refresh();
