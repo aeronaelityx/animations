@@ -155,7 +155,8 @@ function fitFocus(imageAspect, motion, z, fraction, third, captionHeight, captio
   const reserve = captionHeight * depth / 8 * fit / Math.tan(T.MathUtils.degToRad(20));
   const top = halfHeight * .97 - (captionPlacement === 'top' ? reserve : 0);
   const bottom = -halfHeight * .97 + (captionPlacement === 'bottom' ? reserve : 0);
-  const width = Math.min(2 * halfWidth * fraction * (motion.scale ?? 1), 1.96 * halfWidth, (top - bottom) * imageAspect);
+  const availableWidth = Math.min(2 * halfWidth, (top - bottom) * imageAspect);
+  const width = availableWidth * Math.min(.98, fraction * (motion.scale ?? 1));
   const radiusY = width / imageAspect / 2;
   const roomX = Math.max(0, halfWidth * .99 - width / 2);
   const center = third === 'top' ? 2 / 3 : third === 'bottom' ? -2 / 3 : 0;
