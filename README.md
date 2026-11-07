@@ -1,6 +1,6 @@
 # AELITYX Motion Studio
 
-**Cinematic Lab 2.5.1 · Exportación WebM a pantalla completa**
+**Cinematic Lab 2.5.1 · Exportación WebM con encuadre del escenario**
 
 Convierte tus imágenes en recorridos animados en 3D y descarga el resultado en WebM. Cada imagen conserva su ficha y sus ajustes cuando la mueves en la secuencia. La importación, la vista previa y el render se hacen en el navegador.
 
@@ -41,7 +41,7 @@ En **9:16**, elige **Posición al desplegar** en cualquier recorrido. En todos l
 | Ajuste | Opciones |
 | --- | --- |
 | Encuadre | **1:1** 1024 × 1024, **9:16** 1080 × 1920 o **16:9** 1920 × 1080 |
-| Composición WebM | **Pantalla completa** recorta la imagen al cuadro con un acercamiento suave. **Galería** conserva los efectos 3D del escenario. |
+| Composición WebM | **Como en el escenario** es el modo predeterminado. Conserva las tarjetas y los efectos 3D dentro del formato elegido. **Ampliar imagen** recorta la imagen al cuadro y aplica un acercamiento suave. |
 | FPS | 24, 30 o 60 |
 | Duración | De 1 a 12 segundos por imagen |
 | Contenido | Recorrido continuo, secuencia con efectos o imagen seleccionada |
@@ -92,7 +92,7 @@ Abre la dirección que Vite muestra en la terminal. Usa `npm run build` para gen
 
 | Referencia | Contenido |
 | --- | --- |
-| `main` | Cinematic Lab 2.5.1 con exportación WebM a pantalla completa. |
+| `main` | Cinematic Lab 2.5.1 con exportación WebM que conserva el encuadre del escenario. |
 | `stable-v2.5` | Versión anterior con intensidad global y cuatro direcciones de recorrido. |
 | `stable-v2.2` | Versión aprobada con reordenamiento por arrastre o botones y documentación de uso. |
 | [`stable-v2.0`](https://github.com/aeronaelityx/animations/tree/stable-v2.0) | Respaldo de Cinematic Lab antes de añadir Collage y Rompecabezas. |
