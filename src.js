@@ -559,7 +559,7 @@ async function addImage(source, name) {
 }
 function lock(value) {
   busy = value;
-  for (const id of ['files','demo','demoSet','ratio','duration','scope','layout','direction','spacing','layerEffects','background','finish','fps','showCaption','bubbleThird','bubbleSize',...textControls]) byId(id).disabled = value;
+  for (const id of ['files','demo','demoSet','ratio','exportFraming','duration','scope','layout','direction','spacing','layerEffects','background','finish','fps','showCaption','bubbleThird','bubbleSize',...textControls]) byId(id).disabled = value;
   refresh();
 }
 async function importImages(files) {
@@ -821,6 +821,68 @@ function download(url, name) {
   link.click();
 }
 byId('webp').onclick = () => download(cards[selected].url, cards[selected].name.replace(/\.[^.]+$/, '') + '.webp');
+function createCoverExport(indices, seconds, continuous) {
+  const [width, height] = dimensions();
+  const output = document.createElement('canvas');
+  output.width = width;
+  output.height = height;
+  const context = output.getContext('2d', {alpha:false});
+  const background = byId('background').value;
+  const showCaption = byId('showCaption').checked;
+  const [font, align, titleSize, detailSize, titleColor, detailColor, captionBackground, position] =
+    textControls.map(id => byId(id).value);
+  const captions = new Map();
+
+  function drawCard(card, progress, alpha) {
+    const image = card.mesh.material.map.image;
+    const travel = Math.sin(progress * Math.PI);
+    const scale = Math.max(width / image.width, height / image.height) * (1 + .08 * travel);
+    const imageWidth = image.width * scale;
+    const imageHeight = image.height * scale;
+    context.globalAlpha = alpha;
+    context.drawImage(image, (width - imageWidth) / 2, (height - imageHeight) / 2, imageWidth, imageHeight);
+  }
+
+  function drawCaption(card) {
+    if (!showCaption) return;
+    if (!captions.has(card)) {
+      const label = document.createElement('canvas');
+      label.width = 1024;
+      label.height = 512;
+      const pixels = paintCaption(label, card.title.trim() || card.name, card.detail, {
+        font, align, titleColor, detailColor, background:captionBackground,
+        titleSize: T.MathUtils.clamp(Number(titleSize) || 58, 28, 80),
+        detailSize: T.MathUtils.clamp(Number(detailSize) || 34, 18, 46)
+      }, label.height);
+      captions.set(card, {label, pixels});
+    }
+    const {label, pixels} = captions.get(card);
+    const labelWidth = Math.min(width * .9, height * 1.1, height * .29 * label.width / pixels);
+    const labelHeight = pixels * labelWidth / label.width;
+    const inset = height * .045;
+    context.drawImage(label, 0, 0, label.width, pixels,
+      (width - labelWidth) / 2, position === 'top' ? inset : height - inset - labelHeight,
+      labelWidth, labelHeight);
+  }
+
+  return {
+    canvas: output,
+    render(time) {
+      const index = Math.min(indices.length - 1, Math.floor(time / seconds));
+      const progress = Math.min(1, time / seconds - index);
+      const card = cards[indices[index]];
+      context.fillStyle = background;
+      context.fillRect(0, 0, width, height);
+      drawCard(card, progress, 1);
+      if (continuous && index + 1 < indices.length) {
+        const blend = smooth(progress, .84, 1);
+        if (blend > 0) drawCard(cards[indices[index + 1]], 0, blend);
+      }
+      context.globalAlpha = 1;
+      drawCaption(card);
+    }
+  };
+}
 byId('export').onclick = async () => {
   const previous = selected;
   const wasSpinning = spinning;
@@ -828,7 +890,8 @@ byId('export').onclick = async () => {
   const previousTourPosition = tour.position;
   const scope = byId('scope').value;
   const continuous = scope === 'helix';
-  if (continuous && !tourAvailable()) {
+  const cover = byId('exportFraming').value === 'cover';
+  if (continuous && !cover && !tourAvailable()) {
     status('Importa al menos dos imágenes para exportar el recorrido.');
     return;
   }
@@ -843,26 +906,29 @@ byId('export').onclick = async () => {
 
   try {
     const { exportWebM } = await import('./webm');
-    resize(true);
-    selected = indices[0];
-    Object.assign(view, {cursor:selected, focus:0, progress:0});
-    recordingTour = continuous;
-    animation = gsap.timeline({paused:true});
-    if (continuous) {
-      tour.position = 0;
-      animation.to(tour, {position:indices.length, duration:seconds * indices.length, ease:'none'});
-    } else {
-      indices.forEach(index => clip(animation, index, seconds));
+    const fullFrame = cover ? createCoverExport(indices, seconds, continuous) : null;
+    if (!fullFrame) {
+      resize(true);
+      selected = indices[0];
+      Object.assign(view, {cursor:selected, focus:0, progress:0});
+      recordingTour = continuous;
+      animation = gsap.timeline({paused:true});
+      if (continuous) {
+        tour.position = 0;
+        animation.to(tour, {position:indices.length, duration:seconds * indices.length, ease:'none'});
+      } else {
+        indices.forEach(index => clip(animation, index, seconds));
+      }
     }
 
     let lastPercent = -1;
-    const blob = await exportWebM(canvas, {
+    const blob = await exportWebM(fullFrame?.canvas ?? canvas, {
       fps,
-      seconds: animation.duration(),
-      render(time) {
+      seconds: fullFrame ? seconds * indices.length : animation.duration(),
+      render: fullFrame?.render ?? (time => {
         animation.time(time, false);
         drawFrame(performance.now());
-      },
+      }),
       report(progress, action) {
         const percent = Math.round(progress * 100);
         if (percent === lastPercent) return;
@@ -872,7 +938,7 @@ byId('export').onclick = async () => {
     });
     if (!blob.size) throw new Error('El video salió vacío.');
     const url = URL.createObjectURL(blob);
-    download(url, 'aelityx-motion.webm');
+    download(url, 'aelityx-motion-' + dimensions().join('x') + '.webm');
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
     status('WebM listo.');
   } catch (error) {
