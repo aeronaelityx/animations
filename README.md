@@ -1,12 +1,8 @@
 # AELITYX Motion Studio
 
-**Cinematic Lab 2.2 · Orden de imágenes**
+**Cinematic Lab 2.5.1 · Exportación WebM a pantalla completa**
 
 Convierte tus imágenes en recorridos animados en 3D y descarga el resultado en WebM. Cada imagen conserva su ficha y sus ajustes cuando la mueves en la secuencia. La importación, la vista previa y el render se hacen en el navegador.
-
-[Probar la versión 2.2](https://animations-pb3p7mueu-illumination-keeper.vercel.app/) · [Versión respaldada en Git](https://github.com/aeronaelityx/animations/tree/stable-v2.2)
-
-> La vista previa de Vercel puede pedirte iniciar sesión. También puedes ejecutar el editor en local.
 
 ## Primer recorrido
 
@@ -57,13 +53,13 @@ Cuando el navegador puede codificar con WebCodecs, el editor renderiza fotograma
 
 ## Alcance y límites
 
-| Tema | Qué esperar en la 2.2 |
+| Tema | Qué esperar en la 2.5.1 |
 | --- | --- |
 | Capacidad | Hasta 20 imágenes por sesión. |
 | Importación | Formatos que el navegador pueda decodificar, más HEIC/HEIF mediante conversión local. GIF y WebP animados se usan como imágenes fijas. |
 | Proporciones | La app prepara copias WebP de hasta 2048 px en el lado mayor sin estirar la imagen. La esfera cerrada usa un recorte circular. Al desplegarse, encuadra la imagen completa. |
 | Parallax | Usa tus capas o tu mapa de profundidad. El editor no genera esos recursos automáticamente. |
-| Sesión | Los ajustes y las imágenes viven en la pestaña. Descarga tus resultados antes de recargar o cerrar el editor. La 2.2 no guarda proyectos editables ni ofrece sincronización. |
+| Sesión | Los ajustes y las imágenes viven en la pestaña. Descarga tus resultados antes de recargar o cerrar el editor. La aplicación no guarda proyectos editables ni ofrece sincronización. |
 | Formato de salida | WebM para video y WebP para la imagen. MP4 y pistas de audio quedan fuera del editor. |
 | Navegador | El escenario requiere WebGL 2. La exportación depende de que el navegador tenga un codificador WebM compatible. |
 
@@ -72,7 +68,7 @@ Cuando el navegador puede codificar con WebCodecs, el editor renderiza fotograma
 Requiere **Node.js 22.x** y npm.
 
 ```sh
-git clone --branch stable-v2.2 https://github.com/aeronaelityx/animations.git
+git clone --branch main https://github.com/aeronaelityx/animations.git
 cd animations
 npm ci
 npm run dev
@@ -96,6 +92,8 @@ Abre la dirección que Vite muestra en la terminal. Usa `npm run build` para gen
 
 | Referencia | Contenido |
 | --- | --- |
+| `main` | Cinematic Lab 2.5.1 con exportación WebM a pantalla completa. |
+| `stable-v2.5` | Versión anterior con intensidad global y cuatro direcciones de recorrido. |
 | `stable-v2.2` | Versión aprobada con reordenamiento por arrastre o botones y documentación de uso. |
 | [`stable-v2.0`](https://github.com/aeronaelityx/animations/tree/stable-v2.0) | Respaldo de Cinematic Lab antes de añadir Collage y Rompecabezas. |
 | [`cinematic-collages`](https://github.com/aeronaelityx/animations/tree/cinematic-collages) | Rama de trabajo de la variante que incorpora esos recorridos. |
