@@ -45,6 +45,7 @@ En **9:16**, elige **Posición al desplegar** en cualquier recorrido. En todos l
 | Ajuste | Opciones |
 | --- | --- |
 | Encuadre | **1:1** 1024 × 1024, **9:16** 1080 × 1920 o **16:9** 1920 × 1080 |
+| Composición WebM | **Pantalla completa** recorta la imagen al cuadro con un acercamiento suave. **Galería** conserva los efectos 3D del escenario. |
 | FPS | 24, 30 o 60 |
 | Duración | De 1 a 12 segundos por imagen |
 | Contenido | Recorrido continuo, secuencia con efectos o imagen seleccionada |
