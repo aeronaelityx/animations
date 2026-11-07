@@ -198,6 +198,12 @@ function currentCardIndex() {
   if (!spinning) return selected;
   return layout === 'pool' ? Math.floor(tour.position) : Math.round(tourCursor(tour.position));
 }
+function orientPath(x, y, aspect, direction) {
+  if (direction === 'right') return [-x, y];
+  if (direction === 'down') return [-y * aspect, x / aspect];
+  if (direction === 'up') return [y * aspect, -x / aspect];
+  return [x, y];
+}
 function drawFrame(time) {
   const delta = T.MathUtils.clamp((time - (lastFrame ?? time)) / 1000, 0, .05);
   lastFrame = time;
@@ -218,6 +224,7 @@ function drawFrame(time) {
   const thirds = usesVerticalThirds();
   const third = thirds ? byId('bubbleThird').value : 'center';
   const fraction = Number(byId('bubbleSize').value) / 100;
+  const direction = byId('direction').value;
   const captionPosition = byId('captionPosition').value;
   const captionPlacement = thirds && third === captionPosition
     ? (third === 'top' ? 'bottom' : 'top') : captionPosition;
@@ -238,6 +245,7 @@ function drawFrame(time) {
     pool.draw({
       card: active, aspect: camera.aspect, phase, flow, assembly, alpha, spacing, captionHeight,
       fit: active && fitFocus(active.aspect, motion, .15, fraction, third, captionHeight, captionPlacement),
+      orient: (x, y) => orientPath(x, y, active.aspect, direction),
       motion, background: byId('background').value
     });
     renderer.render(scene, camera);
@@ -321,6 +329,7 @@ function drawFrame(time) {
       ry = Math.sin(step) * .42;
       rz = Math.cos(step) * .13;
     }
+    [x, y] = orientPath(x, y, camera.aspect, direction);
     const target = focus > 0
       ? fitFocus(renderAspect, motion, (motion.z ?? 0) + .42, fraction, third, captionHeight, captionPlacement)
       : null;
@@ -470,7 +479,7 @@ function refresh() {
     };
     return button;
   }));
-  for (const id of ['engine','cameraMode','restoreCamera','middle','foreground','depthMap',...cameraFields,'applyCode','resetCode','motionCode','cardTitle','cardDetail','effect','strength','prev','next','play','orbit','remove','random','applyAll','export','webp']) {
+  for (const id of ['engine','cameraMode','restoreCamera','middle','foreground','depthMap',...cameraFields,'applyCode','resetCode','motionCode','cardTitle','cardDetail','effect','strength','strengthAll','prev','next','play','orbit','remove','random','applyAll','export','webp']) {
     byId(id).disabled = !card || busy;
   }
 }
@@ -550,7 +559,7 @@ async function addImage(source, name) {
 }
 function lock(value) {
   busy = value;
-  for (const id of ['files','demo','demoSet','ratio','duration','scope','layout','spacing','layerEffects','background','finish','fps','showCaption','bubbleThird','bubbleSize',...textControls]) byId(id).disabled = value;
+  for (const id of ['files','demo','demoSet','ratio','duration','scope','layout','direction','spacing','layerEffects','background','finish','fps','showCaption','bubbleThird','bubbleSize',...textControls]) byId(id).disabled = value;
   refresh();
 }
 async function importImages(files) {
@@ -702,16 +711,21 @@ for (const id of ['middle','foreground','depthMap']) {
 }
 byId('cardTitle').oninput = e => { cards[selected].title = e.target.value; };
 byId('cardDetail').oninput = e => { cards[selected].detail = e.target.value; };
-byId('strength').oninput = e => { cards[selected].strength = Number(e.target.value); };
+byId('strength').oninput = event => {
+  const strength = Number(event.target.value);
+  if (byId('strengthAll').checked) cards.forEach(card => { card.strength = strength; });
+  else cards[selected].strength = strength;
+};
 byId('random').onclick = () => {
   randomize();
   status('Efectos asignados al azar sin repetir.');
 };
 byId('applyAll').onclick = () => {
   const effect = Number(byId('effect').value);
-  cards.forEach(card => { card.effect = effect; delete card.frames; });
+  const strength = Number(byId('strength').value);
+  cards.forEach(card => { card.effect = effect; card.strength = strength; delete card.frames; });
   syncCode(cards[selected]);
-  status('Efecto aplicado a todas las imágenes.');
+  status('Efecto e intensidad aplicados a todas las imágenes.');
 };
 byId('layout').onchange = e => {
   if (spinning) view.cursor = tourCursor(tour.position);

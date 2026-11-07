@@ -30,7 +30,9 @@ Convierte tus imágenes en recorridos animados en 3D y descarga el resultado en 
 
 ## Controles de edición
 
-- **Por imagen.** Ajusta el efecto, su intensidad, el título y el detalle. Puedes aplicar un efecto a todas las imágenes o aleatorizar sus efectos. Mover una miniatura también mueve sus ajustes.
+**Dirección** orienta el recorrido hacia la izquierda, la derecha, abajo o arriba. Los recorridos diagonales giran o se reflejan con el eje elegido. La orientación del recorrido se aplica al WebM.
+
+- **Por imagen.** Ajusta el efecto, su intensidad, el título y el detalle. **Aplicar efecto a todas** copia también la intensidad. Activa **Ajustar intensidad de todas** para mover el deslizador en conjunto sin cambiar los efectos asignados. Puedes aleatorizar sus efectos. Mover una miniatura también mueve sus ajustes.
 - **Cámara y profundidad.** En los recorridos de tarjetas puedes elegir entre el efecto habitual, 3D Float y parallax. El parallax por capas usa la imagen base y recortes transparentes aportados por ti. El modo por mapa usa una imagen de profundidad en escala de grises con blanco para lo cercano. El rompecabezas usa su propia puesta en escena.
 - **Código del efecto.** Consulta la función del preset y edita sus fotogramas clave como JSON. Usa entre 2 y 120 puntos ordenados, con `t` de 0 a 1. Puedes ajustar `x`, `y`, `z`, `rx`, `ry`, `rz`, `scale` y `opacity`. **Restaurar preset** vuelve al efecto original.
 - **Escena.** Elige luz suave, color sólido o partículas y ajusta el fondo. La alberca añade su superficie de agua animada.

@@ -151,7 +151,7 @@ export function createPoolScene(scene) {
     contains(ray) {
       return group.visible && ray.intersectObjects(faces).length > 0;
     },
-    draw({ card, aspect, phase, flow, assembly, alpha, spacing, fit, motion, background }) {
+    draw({ card, aspect, phase, flow, assembly, alpha, spacing, fit, orient, motion, background }) {
       water.visible = true;
       group.visible = Boolean(card && alpha > .005);
       water.material.uniforms.aspect.value = aspect;
@@ -177,9 +177,13 @@ export function createPoolScene(scene) {
         const direction = Math.atan2(y, x) + .14 * Math.sin(index * 2.63 + phase * tau);
         const ripple = phase * tau + index * 1.57;
         const push = (index === 4 ? .10 : .22) * spread * drift;
+        const [dx, dy] = orient(
+          Math.cos(direction) * push + (.034 * Math.cos(ripple) + .36 * (.5 - phase)) * drift,
+          Math.sin(direction) * push + .034 * Math.sin(ripple) * drift
+        );
         tile.position.set(
-          x + Math.cos(direction) * push + .034 * Math.cos(ripple) * drift,
-          y + Math.sin(direction) * push + .034 * Math.sin(ripple) * drift,
+          x + dx,
+          y + dy,
           (.15 + .16 * Math.sin(ripple)) * drift
         );
         tile.rotation.set(
