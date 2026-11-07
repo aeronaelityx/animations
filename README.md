@@ -38,7 +38,7 @@ Convierte tus imágenes en recorridos animados en 3D y descarga el resultado en 
 
 ## Exportación
 
-En **Burbujas** con encuadre **9:16**, elige **Posición al desplegar** para colocar la tarjeta arriba, al centro o abajo. Ajusta **Tamaño al desplegar** del 35 % al 98 % del ancho. Si la tarjeta es grande, puede extenderse al tercio vecino y se desplaza hacia adentro para quedar dentro del cuadro. Si la ficha de texto coincide con ese extremo, aparece en el extremo opuesto.
+En **9:16**, elige **Posición al desplegar** en cualquier recorrido. En todos los formatos puedes ajustar **Tamaño al desplegar** del 35 % al 98 % del ancho, con ajuste al alto disponible. Estos controles se aplican a la imagen destacada o al rompecabezas armado. Si la ficha coincide con el extremo elegido, aparece en el extremo opuesto.
 
 | Ajuste | Opciones |
 | --- | --- |

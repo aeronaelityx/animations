@@ -142,11 +142,30 @@ function resize(full = false) {
 new ResizeObserver(() => { if (!busy) resize(); }).observe(stage);
 const bubbleTarget = new T.Vector3();
 function usesVerticalThirds() {
-  return layout === 'bubbles' && byId('ratio').value === '1080,1920';
+  return byId('ratio').value === '1080,1920';
 }
 byId('bubbleSize').oninput = event => {
   byId('bubbleSizeValue').textContent = event.target.value + ' %';
 };
+function fitFocus(imageAspect, motion, z, fraction, third, captionHeight, captionPlacement) {
+  const depth = Math.max(1, camera.position.length() - T.MathUtils.clamp(z, -.8, 1.3));
+  const fit = Math.tan(T.MathUtils.degToRad(camera.fov / 2));
+  const halfHeight = depth * fit;
+  const halfWidth = halfHeight * camera.aspect;
+  const reserve = captionHeight * depth / 8 * fit / Math.tan(T.MathUtils.degToRad(20));
+  const top = halfHeight * .97 - (captionPlacement === 'top' ? reserve : 0);
+  const bottom = -halfHeight * .97 + (captionPlacement === 'bottom' ? reserve : 0);
+  const width = Math.min(2 * halfWidth * fraction * (motion.scale ?? 1), 1.96 * halfWidth, (top - bottom) * imageAspect);
+  const radiusY = width / imageAspect / 2;
+  const roomX = Math.max(0, halfWidth * .99 - width / 2);
+  const center = third === 'top' ? 2 / 3 : third === 'bottom' ? -2 / 3 : 0;
+  bubbleTarget.set(
+    T.MathUtils.clamp(motion.x ?? 0, -roomX, roomX),
+    T.MathUtils.clamp(halfHeight * center + (motion.y ?? 0), bottom + radiusY, top - radiusY),
+    -depth
+  ).applyQuaternion(camera.quaternion).add(camera.position);
+  return { width, x: bubbleTarget.x, y: bubbleTarget.y, z: bubbleTarget.z };
+}
 function updateThirdControl() {
   byId('bubbleThirdControl').hidden = !usesVerticalThirds();
 }
@@ -195,7 +214,12 @@ function drawFrame(time) {
   const progress = spotlight ? smooth(beat,.2,.93) : view.progress;
   const active = cards[featured];
   moveCamera(camera,active?.cinema ?? defaultCamera,progress,!isPool && active?.engine !== 'preset' ? emphasis : 0,featured);
-  const captionSign = byId('captionPosition').value === 'top' ? -1 : 1;
+  const thirds = usesVerticalThirds();
+  const third = thirds ? byId('bubbleThird').value : 'center';
+  const fraction = Number(byId('bubbleSize').value) / 100;
+  const captionPosition = byId('captionPosition').value;
+  const captionPlacement = thirds && third === captionPosition
+    ? (third === 'top' ? 'bottom' : 'top') : captionPosition;
   if (isPool) {
     const phase = touring ? beat : view.progress;
     const followsTour = touring || tourPaused;
@@ -204,7 +228,7 @@ function drawFrame(time) {
     const alpha = (followsTour || (busy && animated)) && cards.length > 1
       ? smooth(phase, 0, .13) * (1 - smooth(phase, .86, 1)) : 1;
     const flow = (followsTour ? tour.position / Math.max(1, cards.length) : phase) * Math.PI * 2;
-    const captionHeight = updateCaption(active, smooth(assembly, .58, .94) * alpha);
+    const captionHeight = updateCaption(active, smooth(assembly, .58, .94) * alpha, captionPlacement);
     const motion = active && layerEffects ? sampleMotion(active, smooth(phase, .28, .85)) : {};
     cards.forEach(card => {
       card.mesh.visible = false;
@@ -212,21 +236,15 @@ function drawFrame(time) {
     });
     pool.draw({
       card: active, aspect: camera.aspect, phase, flow, assembly, alpha, spacing, captionHeight,
-      captionSign, motion, background: byId('background').value
+      fit: active && fitFocus(active.aspect, motion, .15, fraction, third, captionHeight, captionPlacement),
+      motion, background: byId('background').value
     });
     renderer.render(scene, camera);
     return;
   }
 
   pool.hide();
-  const thirds = usesVerticalThirds();
-  const third = byId('bubbleThird').value;
-  const captionPosition = byId('captionPosition').value;
-  const captionPlacement = thirds && third === captionPosition
-    ? (third === 'top' ? 'bottom' : 'top') : captionPosition;
   const captionHeight = updateCaption(active, layout === 'bubbles' ? smooth(emphasis, .57, .93) : emphasis, captionPlacement);
-  const extraCaption = Math.max(0, captionHeight - .91);
-  const captionY = captionSign * (.44 + extraCaption * .5);
   cards.forEach((card, i) => {
     const { mesh, surface, aspect, strength, engine, cinema } = card;
     const half = cards.length / 2;
@@ -302,33 +320,15 @@ function drawFrame(time) {
       ry = Math.sin(step) * .42;
       rz = Math.cos(step) * .13;
     }
-    let focusWidth = Math.min(camera.aspect * 4.25, (3.62 - extraCaption) * renderAspect) * (motion.scale ?? 1);
-    let focusX = motion.x ?? 0;
-    let focusY = captionY + (motion.y ?? 0);
-    let focusZ = (motion.z ?? 0) + .42;
-    if (thirds && focus > 0) {
-      const depth = Math.max(1, camera.position.length() - T.MathUtils.clamp(focusZ, -.8, 1.3));
-      const halfHeight = depth * Math.tan(T.MathUtils.degToRad(camera.fov / 2));
-      const center = third === 'top' ? 2 / 3 : third === 'bottom' ? -2 / 3 : 0;
-      const fraction = Number(byId('bubbleSize').value) / 100;
-      const maxWidth = Math.min(halfHeight * 1.96 * camera.aspect, halfHeight * 1.88 * renderAspect);
-      const requestedWidth = Math.min(halfHeight * 2 * camera.aspect * fraction, maxWidth);
-      focusWidth = Math.min(requestedWidth * (motion.scale ?? 1), maxWidth);
-      const verticalRoom = Math.max(0, halfHeight * .97 - focusWidth / renderAspect / 2);
-      const horizontalRoom = Math.max(0, halfHeight * .99 * camera.aspect - focusWidth / 2);
-      bubbleTarget.set(
-        T.MathUtils.clamp(focusX, -horizontalRoom, horizontalRoom),
-        T.MathUtils.clamp(halfHeight * center + (motion.y ?? 0), -verticalRoom, verticalRoom),
-        -depth
-      ).applyQuaternion(camera.quaternion).add(camera.position);
-      ({ x: focusX, y: focusY, z: focusZ } = bubbleTarget);
-    }
-    const width = mix(galleryWidth, focusWidth, focus);
+    const target = focus > 0
+      ? fitFocus(renderAspect, motion, (motion.z ?? 0) + .42, fraction, third, captionHeight, captionPlacement)
+      : null;
+    const width = target ? mix(galleryWidth, target.width, focus) : galleryWidth;
     mesh.scale.set(width, width / renderAspect, 1);
     mesh.position.set(
-      mix(x, focusX, focus),
-      mix(y, focusY, focus),
-      mix(z, focusZ, focus)
+      target ? mix(x, target.x, focus) : x,
+      target ? mix(y, target.y, focus) : y,
+      target ? mix(z, target.z, focus) : z
     );
     mesh.rotation.set(
       mix(rx, motion.rx ?? 0, focus),

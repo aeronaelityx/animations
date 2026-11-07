@@ -151,7 +151,7 @@ export function createPoolScene(scene) {
     contains(ray) {
       return group.visible && ray.intersectObjects(faces).length > 0;
     },
-    draw({ card, aspect, phase, flow, assembly, alpha, spacing, captionHeight, captionSign, motion, background }) {
+    draw({ card, aspect, phase, flow, assembly, alpha, spacing, fit, motion, background }) {
       water.visible = true;
       group.visible = Boolean(card && alpha > .005);
       water.material.uniforms.aspect.value = aspect;
@@ -168,16 +168,9 @@ export function createPoolScene(scene) {
       const drift = 1 - assembly;
       const spread = MathUtils.clamp(spacing / 1.35, .7, 1.5);
       const width = Math.min(aspect * 4.19, 3.18 * card.aspect, 5.15);
-      const clearance = Math.max(0, captionHeight - .72);
-      const available = Math.min(width, (3.32 - clearance * .55) * card.aspect);
-      const emphasis = MathUtils.clamp(motion.scale ?? 1, .65, 1.14);
-      const focusWidth = MathUtils.lerp(available * .85, available * emphasis, assembly);
+      const focusWidth = MathUtils.lerp(width * .85, fit.width, assembly);
       group.scale.set(focusWidth, focusWidth / card.aspect, 1);
-      group.position.set(
-        MathUtils.clamp(motion.x ?? 0, -.23, .23) * assembly,
-        (captionSign * (captionHeight * .5 + .12) + MathUtils.clamp(motion.y ?? 0, -.18, .18)) * assembly,
-        .15 + (motion.z ?? 0) * .2 * assembly
-      );
+      group.position.set(fit.x * assembly, fit.y * assembly, MathUtils.lerp(.15, fit.z, assembly));
       group.rotation.set((motion.rx ?? 0) * .22 * assembly, (motion.ry ?? 0) * .22 * assembly, (motion.rz ?? 0) * .36 * assembly);
 
       pieces.forEach(({ tile, x, y }, index) => {
