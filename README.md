@@ -26,7 +26,7 @@ Convierte tus imágenes en recorridos animados en 3D y descarga el resultado en 
 
 ## Controles de edición
 
-**Dirección** orienta el recorrido hacia la izquierda, la derecha, abajo o arriba. Los recorridos diagonales giran o se reflejan con el eje elegido. La orientación del recorrido se aplica al WebM.
+**Dirección** orienta el recorrido hacia la izquierda, la derecha, abajo o arriba. Los recorridos diagonales giran o se reflejan con el eje elegido. Las opciones **Hélice · sentido horario** y **Hélice · sentido antihorario** hacen girar las tarjetas alrededor del centro mientras cambian de profundidad, sin invertir el orden de las miniaturas. En **Rompecabezas**, el giro se aplica a las piezas cuando se separan. **Destacar cada imagen con su efecto** sigue aplicando el efecto de cada tarjeta al desplegarse. Usa **Recorrido continuo** y **Como en el escenario** para llevar la hélice completa al WebM.
 
 - **Por imagen.** Ajusta el efecto, su intensidad, el título y el detalle. **Aplicar efecto a todas** copia también la intensidad. Activa **Ajustar intensidad de todas** para mover el deslizador en conjunto sin cambiar los efectos asignados. Puedes aleatorizar sus efectos. Mover una miniatura también mueve sus ajustes.
 - **Cámara y profundidad.** En los recorridos de tarjetas puedes elegir entre el efecto habitual, 3D Float y parallax. El parallax por capas usa la imagen base y recortes transparentes aportados por ti. El modo por mapa usa una imagen de profundidad en escala de grises con blanco para lo cercano. El rompecabezas usa su propia puesta en escena.

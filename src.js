@@ -198,7 +198,12 @@ function currentCardIndex() {
   if (!spinning) return selected;
   return layout === 'pool' ? Math.floor(tour.position) : Math.round(tourCursor(tour.position));
 }
-function orientPath(x, y, aspect, direction) {
+function orientPath(x, y, aspect, direction, turn = 0) {
+  if (turn) {
+    const sin = Math.sin(turn);
+    const cos = Math.cos(turn);
+    return [x * cos - y * aspect * sin, x * sin / aspect + y * cos];
+  }
   if (direction === 'right') return [-x, y];
   if (direction === 'down') return [-y * aspect, x / aspect];
   if (direction === 'up') return [y * aspect, -x / aspect];
@@ -225,6 +230,8 @@ function drawFrame(time) {
   const third = thirds ? byId('bubbleThird').value : 'center';
   const fraction = Number(byId('bubbleSize').value) / 100;
   const direction = byId('direction').value;
+  const helixDirection = direction === 'clockwise' ? -1 : direction === 'counterclockwise' ? 1 : 0;
+  const helixStep = Math.PI * 2 / T.MathUtils.clamp(cards.length, 2, 6);
   const captionPosition = byId('captionPosition').value;
   const captionPlacement = thirds && third === captionPosition
     ? (third === 'top' ? 'bottom' : 'top') : captionPosition;
@@ -245,7 +252,7 @@ function drawFrame(time) {
     pool.draw({
       card: active, aspect: camera.aspect, phase, flow, assembly, alpha, spacing, captionHeight,
       fit: active && fitFocus(active.aspect, motion, .15, fraction, third, captionHeight, captionPlacement),
-      orient: (x, y) => orientPath(x, y, active.aspect, direction),
+      orient: (x, y) => orientPath(x, y, active.aspect, direction, helixDirection * phase * Math.PI * 2),
       motion, background: byId('background').value
     });
     renderer.render(scene, camera);
@@ -329,7 +336,17 @@ function drawFrame(time) {
       ry = Math.sin(step) * .42;
       rz = Math.cos(step) * .13;
     }
-    [x, y] = orientPath(x, y, camera.aspect, direction);
+    if (helixDirection) {
+      const pathOffset = touring || (tourPaused && !busy) ? offset : offset - view.progress;
+      const phase = Math.PI / 2 - helixDirection * pathOffset * helixStep;
+      x = Math.cos(phase) * span * .22;
+      y = Math.sin(phase) * 1.5;
+      z = T.MathUtils.clamp(-pathOffset * spacing * .65, -4, 1);
+      galleryWidth = Math.min(galleryWidth, span * .65);
+      galleryOpacity = Math.min(galleryOpacity, edge);
+    } else {
+      [x, y] = orientPath(x, y, camera.aspect, direction);
+    }
     const target = focus > 0
       ? fitFocus(renderAspect, motion, (motion.z ?? 0) + .42, fraction, third, captionHeight, captionPlacement)
       : null;
@@ -347,7 +364,7 @@ function drawFrame(time) {
     );
     surface.cardSheen.value = .66 + mesh.rotation.y * .18;
     const ribbonFade = radiant ? 1 - .38 * smooth(Math.abs(offset), 1.2, 3.25) : 1;
-    const opacity = (layout === 'slides' && Math.abs(offset) < .95 ? 1 : galleryOpacity) * ribbonFade;
+    const opacity = (!helixDirection && layout === 'slides' && Math.abs(offset) < .95 ? 1 : galleryOpacity) * ribbonFade;
     mesh.renderOrder = focus > .01 ? 1 : 0;
     mesh.material.opacity = i === featured ? mix(opacity, motion.opacity ?? 1, focus) : opacity * (1 - emphasis * (layout === "helix" ? .94 : .72));
     mesh.visible = mesh.material.opacity > .005;
